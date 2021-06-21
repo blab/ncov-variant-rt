@@ -1,0 +1,228 @@
+---
+title: "Fitting SARS-CoV-2 variant frequency growth using (multinomial) logistic regression"
+author: "Marlin Figgins"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+
+## Loading and processing data
+
+```{r}
+raw_df = read.csv("metadata-usa.clean.csv.gz") %>% select(date, pango_lineage, division)
+```
+
+```{r}
+variants.list <- c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617") 
+
+clean_df <- raw_df %>%
+  mutate(date = as.Date(date)) %>% # Use datetime
+  mutate(pango_lineage = case_when(pango_lineage %in% variants.list ~ pango_lineage, # pango_lineage to variants we care about
+                                   TRUE ~ "other")) %>%
+  count(date, pango_lineage, division) %>% # Count occurrence of each lineage and division
+  group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>% # Compute total sequences observed on that day in that place
+  ungroup() %>%
+  mutate(freq = n / sequence_total) # Compute total frequency of lineage for each day and division
+
+clean_df_wide <- clean_df %>% # Pivot to wide format for passing to models
+  rename(sequences = n) %>%
+  pivot_wider(names_from = pango_lineage, values_from = c(sequences, freq), values_fill = 0) 
+```
+
+```{r}
+clean_df_wide
+```
+
+# Preliminary plots
+
+```{r}
+## Quick look at sequences 
+clean_df  %>%
+  ggplot(aes(x=date, y = n, id = division)) +
+  geom_line() +
+  facet_wrap(~pango_lineage)
+```
+
+```{r}
+# Look at lineage frequencies in a few states
+clean_df %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x=date, y = freq, color = pango_lineage)) +
+  geom_line() +
+  facet_wrap(~division)
+```
+
+
+## Fitting linear model on the logit scale to frequncies
+
+We'll model each frequency trajectory over time as a logistic function, so that the frequency of variant $v$ on day $t$ is given by
+
+$$
+f_{v}(t) = \frac{\exp(\beta_{0,v} + \beta_{1,v}t)}{1 + \exp(\beta_{0,v} + \beta_{1,v}t)}.
+$$
+We implement this model as a linear regression on the logit of the frequency, so that our observed frequencies $y_{v,t}$ are 
+
+$$
+\text{logit} (y_{v,t}) = \beta_{0,v} + \beta_{1,v} t  + \epsilon, \quad \epsilon \sim \text{Normal}(0, \sigma) .
+$$
+
+```{r}
+library(broom)
+library(modelr)
+
+test_results <- clean_df %>%
+  mutate(logit_freq = qlogis(freq)) %>% # Get frequency on logit scale
+  filter(is.finite(logit_freq)) %>% # Filter out extreme values
+  nest(-division, -pango_lineage) %>% # Fit linear model by division and lineage on logit scale
+  mutate(model = map(data, ~lm(logit_freq ~ time(date), data = .)), 
+         data = map2(.x = data, .y = model, ~add_predictions(.x, .y, var = "logit_pred"))) %>% # Get predictions
+  unnest(data) %>%
+  mutate(pred = plogis(logit_pred)) # Transform logit predictions to [0,1]
+
+test_results
+```
+
+## Plotting results
+
+```{r, fig.height=10, fig.width=14}
+# Plot fits in ggplot1
+test_results %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot( aes(x = date, color = pango_lineage)) +
+  geom_point(aes(y = freq, size = sequence_total)) +
+  scale_size_continuous(range = c(1, 3)) +
+  geom_line(aes(y = pred), lwd = 1.5) +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+```{r, fig.height=5, fig.width=7}
+# Plot fits in ggplot1
+test_results %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot( aes(x = date, color =division )) +
+  geom_point(aes(y = freq, size = sequence_total)) +
+  scale_size_continuous(range = c(1, 3)) +
+  geom_line(aes(y = pred), lwd = 1.5) +
+  facet_wrap(~pango_lineage) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+
+## Fitting multinomial logistic
+
+We now fit a multinomial regression to all $N$ lineages of interest within a division simultaneously. This is assuming that frequencies of each lineage in the population evolve as
+
+$$
+f_{v}(t) = \frac{\exp(\beta_{0,v} + \beta_{1, v} t)}{\sum_{i=1}^N \exp(\beta_{0, i} + \beta_{1, i} t)}
+$$
+We can re-frame this model as a model on the actual case growth of infections with specific variants as
+
+$$
+f_{v}(t) = \frac{p_{v}\exp(r_v t)}{\sum_{i=1}^{N} p_i \exp(r_{i}t)} = \frac{I_{v}(t)}{\sum_{i=1}^{N} I_i(t)},
+$$
+so that if $I_{v}(t)$ is the number of individuals infected with variant $v$, then $p_v = \exp(\beta_{0,v})$ is the number infected at time $0$ and $r_{v} = \beta_{1,v}$ is the exponential growth rate of infections with variant $v$. In R, we can implement this model using `nnet`.
+
+```{r}
+library(lubridate)
+library(nnet)
+```
+
+```{r}
+
+get_division_mat <- function(tbl){
+  return(tbl %>%
+  select(starts_with("sequences"), -sequence_total) %>% # Get sequence counts
+  rename_all(~str_replace(.,"^sequences","pred_freq")) %>% # Rename variable for later
+  as.matrix())
+}
+
+get_division_times <- function(tbl){
+  dt_mat <- tbl %>%
+  select(date) %>%
+  mutate(times = yday(date),
+         times = (times - min(times)) / (max(times) - min(times))) # Transform times for easy fitting
+  return(dt_mat$times)
+}
+
+multinomial_frame <- clean_df_wide %>%
+  nest(-division) %>% # Nest by division
+  mutate(division_mat = map(data, ~get_division_mat(.)), # Get counts 
+         division_times = map(data, ~get_division_times(.)), # Get times
+         model = map2(.x = division_mat, .y = division_times, ~multinom(.x ~ .y, trace = FALSE)),
+         predictions = map(model, ~ predict(., type = "prob")),  # Get predictions
+         data = map2(.x = data, .y = predictions, ~ cbind(.x, .y))) %>%  # Augment original data with predictions
+  select(division, data, model) %>%
+  unnest(data)
+
+multinomial_frame
+```
+
+```{r}
+# Reduce data to long format
+sequence_n <- multinomial_frame %>%
+  select(division, date, sequence_total, starts_with("sequences")) %>%
+  pivot_longer(starts_with("sequences"), names_to = "pango_lineage", values_to = "sequence_n") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^sequences_",""))
+
+obs_freqs <- multinomial_frame %>%
+  select(division, date, sequence_total, starts_with("freq")) %>%
+  pivot_longer(starts_with("freq"), names_to = "pango_lineage", values_to = "obs_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^freq_",""))
+
+pred_freq <- multinomial_frame %>%
+  select(division, date, sequence_total, starts_with("pred_freq")) %>%
+  pivot_longer(starts_with("pred_freq"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_",""))
+
+multinomial_longer <- sequence_n %>% left_join(obs_freqs) %>% left_join(pred_freq)
+
+multinomial_longer
+```
+
+
+```{r, fig.height=10, fig.width=14}
+# Plot fits in ggplot2
+
+# Can add error bars to the data using Jeffrey's interval later
+states_plt <- multinomial_longer %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x = date, color = pango_lineage)) +
+  geom_point(aes(y = obs_freq, size = sequence_total)) +
+  scale_size_continuous(range = c(1, 3)) +
+  geom_line(aes(y = pred_freq), lwd = 1.5) +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+
+#ggsave("multinomial-test.png", plot = states_plt)
+states_plt
+```
+
+```{r}
+multinomial_longer %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x = date, color = division)) +
+  geom_point(aes(y = obs_freq, size = sequence_total)) +
+  scale_size_continuous(range = c(1, 1.3)) +
+  geom_line(aes(y = pred_freq), lwd = 1.5) +
+  facet_wrap(~pango_lineage) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+
+Question: Are there any notable trends in $r_v / r_{\text{other}}$ across different division? 
+- This will be manageable by looking at the model objects to get their parameters, comparing those of baseline category to all others. 
+
+Question: Is this model usable for prediction? What happens if we fit all but a months data, then try to forecast that month?
+- Divide data into training and test set. Evaluate performance of multinomial model trained on training data on the testing data.
+
+Question: Where might the exponential growth assumption become an issue?
