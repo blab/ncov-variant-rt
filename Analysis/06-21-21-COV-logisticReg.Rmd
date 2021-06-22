@@ -1,0 +1,125 @@
+---
+title: "state-estimate-nnetpackage"
+author: "Eslam Abousamra"
+date: "6/21/2021"
+output: word_document
+---
+
+
+# growthrate estimate using nnet package
+
+# Installing packages
+
+```{r}
+library(nnet)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+
+```
+
+
+# Reading and tidying the dataset
+
+```{r}
+
+covmeta_raw = read.csv("metadata-usa.csv")
+
+
+#Create new dataframe with date, state, and lineage
+init_df= data.frame(covmeta_raw$date, covmeta_raw$division, covmeta_raw$pango_lineage)
+
+
+#Count frequency of different lineages in different states every day
+mod_df = init_df %>%
+  count(covmeta_raw.date, covmeta_raw.pango_lineage,covmeta_raw.division)%>%
+  group_by(covmeta_raw.date, covmeta_raw.division) %>%
+  mutate(totalcount = sum(n))%>% 
+  ungroup() %>% 
+  mutate(freq = n/totalcount)
+?count
+mod_df
+
+
+
+
+```
+
+
+# Initial Visualization
+
+
+```{r}
+#Filter states and Lineages of Interest
+mod_df %>%
+  filter(covmeta_raw.division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+
+   filter(covmeta_raw.pango_lineage %in% c("B.1.1.7", "P.1","B.1.526")) %>%
+  
+ ggplot(aes(x=time(covmeta_raw.date), y = freq, color = covmeta_raw.pango_lineage)) + 
+  geom_line(group=1) +
+  facet_wrap(~covmeta_raw.division)
+```
+
+
+# Fitting the logit regression
+
+
+```{r}
+library(modelr)
+
+#logit transformation
+
+mod_df = mod_df %>% mutate(tlogit = qlogis(freq))
+
+view(mod_df2)
+
+
+mod_df2 = mod_df %>% 
+  
+  filter(is.finite(tlogit)) %>% #Removing inf values
+  
+  nest(-covmeta_raw.division, -covmeta_raw.pango_lineage) %>% 
+  
+  mutate(fit1 = map(data, ~lm(tlogit ~ time(covmeta_raw.date), data = .))) %>% 
+  data = map2(.x = data, .y = fit1, ~add_predictions(.x, .y, var = "logit_pred")) %>%
+  
+   unnest(data) %>%
+  
+   mutate(pred = plogis(logit_pred))
+      
+  
+  
+  
+?map
+
+mod_df2
+view(mod_df)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
