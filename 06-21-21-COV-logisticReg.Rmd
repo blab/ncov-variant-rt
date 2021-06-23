@@ -124,13 +124,15 @@ mod_df2
 mod_df2 %>%
   filter(covmeta_raw.division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%  filter(covmeta_raw.pango_lineage %in% c("B.1.1.7", "P.1","B.1.526")) %>%
   ggplot( aes(x = date, color = covmeta_raw.pango_lineage)) +
-  geom_point(aes(y = freq, size = totalcount)) +
+  geom_point(aes(y = freq, size = totalcount, alpha = 1/20)) +
   scale_size_continuous(range = c(1, 3)) +
   geom_line(aes(y = pred), lwd = 1.5) +
   facet_wrap(~covmeta_raw.division) +
   theme(legend.title = element_blank(), 
         axis.title.y=element_blank(),
         axis.title.x=element_blank())
+
+?geom_point
 ```
 
 
@@ -215,7 +217,7 @@ multinomial_longer
 ```{r}
 
 
-states_plt <- multinomial_longer %>%
+states_plt <- multinomial_longer  %>%
   filter(covmeta_raw.division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>% filter(pango_lineage %in% c("B.1.1.7", "P.1","B.1.526")) %>%
   ggplot(aes(x = date, color = pango_lineage)) +
   geom_point(aes(y = obs_freq, size = totalcount)) +
