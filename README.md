@@ -1,4 +1,5 @@
 # ncov-variant-rt
-Analysis of state-by-variant Rt estimates to check for the line change
+Analysis of state-by-variant Rt estimates using CDC and GISAID data
 
-This it to test the conflict change
+This will be a brief description of the project and some figures from its results.
+

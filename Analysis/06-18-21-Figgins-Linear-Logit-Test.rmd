@@ -86,6 +86,16 @@ test_results <- clean_df %>%
 test_results
 ```
 
+```{r}
+#clean_df %>%
+#  mutate(logit_freq = qlogis(freq)) %>% # Get frequency on logit scale
+#  filter(is.finite(logit_freq)) %>% # Filter out extreme values
+#  nest(-division, -pango_lineage) %>% # Fit linear model by division and lineage on logit scale
+#  mutate(model = map(data, ~lm(logit_freq ~ time(date), data = .)), 
+#         data = map2( .x = model, .y = data, ~augment(.x, data = .y))) %>% # Get predictions
+ # unnest(data) %>%
+#  mutate(pred = plogis(.fitted)) # Transform logit predictions to [0,1]
+```
 ## Plotting results
 
 ```{r, fig.height=10, fig.width=14}
@@ -164,6 +174,7 @@ multinomial_frame <- clean_df_wide %>%
 multinomial_frame
 ```
 
+
 ```{r}
 # Reduce data to long format
 sequence_n <- multinomial_frame %>%
@@ -226,3 +237,33 @@ Question: Is this model usable for prediction? What happens if we fit all but a 
 - Divide data into training and test set. Evaluate performance of multinomial model trained on training data on the testing data.
 
 Question: Where might the exponential growth assumption become an issue?
+
+
+## Loading CDC data
+
+```{r}
+cdc_data <- read.csv("https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD") %>% 
+  select(submission_date, state, new_case) %>% # Get columns of interest
+  rename(date = submission_date, cases = new_case, division = state) %>% # Rename to match GISAID
+  mutate(date = as.Date(date, "%m/%d/%Y"), # Change date and division formatting to match
+         division = state.name[match(division, state.abb)]) %>%
+  filter(!is.na(division))# Filter for divisions which weren't matched
+```
+
+```{r}
+full_df <- multinomial_longer %>% left_join(cdc_data) %>%
+  mutate(pred_cases = pred_freq * cases)
+```
+
+
+```{r,  fig.height=10, fig.width=14}
+full_df %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "Illinois", "Washington")) %>%
+  ggplot(aes(x = date, fill = pango_lineage)) +
+  geom_col(aes(y = pred_cases)) +
+  facet_wrap(~division) +
+  #coord_cartesian(ylim = c(0, 10000)) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
