@@ -12,7 +12,7 @@ library(tidyverse)
 ## Loading and processing data
 
 ```{r}
-raw_df = read.csv("metadata-usa.clean.csv.gz") %>% select(date, pango_lineage, division)
+raw_df = read.csv("../metadata-usa.clean.csv") %>% select(date, pango_lineage, division)
 ```
 
 ```{r}
@@ -197,6 +197,33 @@ multinomial_longer <- sequence_n %>% left_join(obs_freqs) %>% left_join(pred_fre
 multinomial_longer
 ```
 
+```{r}
+# Plot samples in ggplot2
+multinomial_longer %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x = date, y= obs_freq, fill = pango_lineage)) +
+  geom_area() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+
+
+```{r}
+# Plot fits in ggplot2
+
+# Can add error bars to the data using Jeffrey's interval later
+multinomial_longer %>%
+  filter(division %in% c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x = date, y= pred_freq, fill = pango_lineage)) +
+  geom_area() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+
 
 ```{r, fig.height=10, fig.width=14}
 # Plot fits in ggplot2
@@ -266,4 +293,10 @@ full_df %>%
   theme(legend.title = element_blank(), 
         axis.title.y=element_blank(),
         axis.title.x=element_blank())
+```
+
+## Export .csv for use else where
+
+```{r}
+write.csv(full_df, "usa-multinomial-fit.csv")
 ```
