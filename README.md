@@ -26,9 +26,14 @@ The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to htt
 
 
 
-# Exploratory Analysis
+## Exploratory Analysis
 
 Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency growth (estimated from the GISAID metadata) and perfoming initial exploratory analysis and visualizing the competition among the lineages within divisions in the US. 
+
+
+
+
+
 
 
 
