@@ -10,9 +10,9 @@ This project involves a demonstration to build out a framework to perform compar
 
 ## Initial datasets
 
-The SARS-CoV-2 genome data were obtained from the GISAID Initiative, please refer to https://www.gisaid.org for more information
+The SARS-CoV-2 genome data were obtained from the GISAID Initiative, please refer to https://www.gisaid.org for more information. To get access to the metadata dataset, register for a free GISAID account.
 
-The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to https://data.cdc.gov for more information
+The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to https://data.cdc.gov for more information.
 
 
 
@@ -28,6 +28,7 @@ The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to htt
 
 # Exploratory Analysis
 
+Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency growth (estimated from the GISAID metadata) and perfoming initial exploratory analysis and visualizing the competition among the lineages within divisions in the US. 
 
 
 
