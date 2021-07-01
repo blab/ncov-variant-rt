@@ -48,6 +48,15 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 
 ## EpiEstim
 
+Here we quantify transmissibility throughout an epidemic from the analysis of time series of incidence as described in Cori et al. (2013) on SARS-CoV-2 data.
+
+### Installation
+
+> install.packages("EpiEstim")
+
+
+Citation: Anne Cori, Neil M. Ferguson, Christophe Fraser, Simon Cauchemez, A New Framework and Software to Estimate Time-Varying Reproduction Numbers During Epidemics, American Journal of Epidemiology, Volume 178, Issue 9, 1 November 2013, Pages 1505–1512.
+
 
 
 
@@ -69,7 +78,7 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 
 
 ## EpiNow
-
+Here we 
 
 
 
