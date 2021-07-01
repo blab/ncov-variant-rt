@@ -1,0 +1,179 @@
+---
+title: "Untitled"
+author: "Marlin Figgins"
+date: "6/26/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(EpiEstim)
+library(tidyverse)
+
+
+```
+
+## Example using EpiEstim with sample data
+
+```{r}
+# Code sample is taken from https://cran.r-project.org/web/packages/EpiEstim/vignettes/demo.html
+
+## load example data
+data(Flu2009)
+
+# Estimate R using Flu2009 incidence data.
+res_parametric_si <- estimate_R(Flu2009$incidence, 
+                                method="parametric_si", # Serial interval is described by Gamma distribution
+                                config = make_config(list( # The config variable contains the SI mean and standard deviation
+                                  mean_si = 2.6, 
+                                  std_si = 1.5))
+)
+
+res_parametric_si$R # the model object contains a data frame with info on R
+```
+
+```{r}
+
+process_rt <- function(x){
+  t_start <- x$R$t_start
+  t_end <- x$R$t_end
+  dates <- x$dates
+  mean_posterior <- x$R[, "Mean(R)"]
+  quantile_0.025_posterior <- x$R[, "Quantile.0.025(R)"]
+  quantile_0.975_posterior <- x$R[, "Quantile.0.975(R)"]
+  
+  return(data.frame(
+   # start = dates[t_start], 
+    dates = dates[t_end], 
+    meanR = mean_posterior,
+    lower = quantile_0.025_posterior,
+    upper = quantile_0.975_posterior))
+}
+  
+test_rt <- process_rt(res_parametric_si)
+
+ggplot(test_rt, aes(dates, meanR)) +
+          geom_ribbon(aes(ymin = lower, ymax = upper, fill = "95%CrI")) +
+          geom_line(color = "black") +
+          geom_hline(yintercept = 1, linetype = "dotted") +
+          ggtitle("Estimated R")
+
+```
+
+EpiEstim by default infers R in terms of sliding windows. We can average the R results across windows containing each time point as follows:
+
+```{r}
+# Processing model R
+res_parametric_si$R %>%
+  mutate(count = t_end - t_start + 1) %>% # Add row for each individual t
+  uncount(count, .id = "t") %>% 
+  mutate(t = t_start + t - 1) %>% # Shift to correspond with dates
+  group_by(t) %>%  # Group by each t
+  summarize(rt_mean = mean(`Mean(R)`), # Take mean across all rts for that date
+            rt_median = mean(`Median(R)`), 
+            rt_quantile.25 = mean(`Quantile.0.25(R)`),
+            rt_quantile.75 = mean(`Quantile.0.75(R)`)) %>%
+  add_row(t = 1, rt_mean = 1, rt_median = 1, rt_quantile.25 = 1, rt_quantile.75  = 1) %>% # Add row for first t and Rt = 1
+  ggplot(aes(x = t)) +
+  geom_ribbon(aes(ymin = rt_quantile.25, ymax = rt_quantile.75), fill = "grey70") +
+  geom_line(aes(y = rt_median))
+```
+
+
+```{r}
+# Importing previous output
+Rt_input_df <- read.csv("usa-multinomial-fit.csv") %>%
+  select(date, division, pango_lineage, pred_cases) %>% # Selecting dates, division, lineage, and predicted_cases of that linege
+  filter(!is.na(pred_cases)) %>%
+  mutate(date = as.Date(date)) %>%
+  rename(I = pred_cases, dates = date) %>% # Rename columns for EpiEstim
+  #mutate_at(vars(I), ~ as.integer(round(.x))) %>% # EpiEstim requires integer incidence
+  mutate(I = abs(I)) # Make sure everything is positive
+```
+
+```{r}
+# Replace these with estimates from a paper of some kind
+config <- make_config(list(mean_si = 5.2, std_si = 2.8)) # using Gayani estimate
+
+get_Rt <- function(incidence_df){
+    res <- incidence_df %>%
+      arrange(dates) %>%
+      estimate_R(method="parametric_si", config = config)
+    return(res)
+}
+
+clean_R_values <- function(Rt_model){
+   Rt_model$R  %>%
+    mutate(count = t_end - t_start + 1) %>% # Add row for each individual t
+    uncount(count, .id = "t") %>% 
+    mutate(t = t_start + t - 1) %>%
+    group_by(t) %>%  # Group by each t
+    summarize(rt_mean = mean(`Mean(R)`), # Take mean across all Rts for that date
+              rt_median = mean(`Median(R)`), 
+              lower = mean(`Quantile.0.025(R)`),
+              upper = mean(`Quantile.0.975(R)`)) %>%
+    add_row(t = 1, rt_mean = 1, rt_median = 1, rt_quantile.25 = 1, rt_quantile.75 = 1) %>% # Add row for first t and Rt = 1
+    arrange(t) %>% # Make sure t's are ordered
+     add_column(dates = Rt_model$dates)
+}
+
+process_rt <- function(x){
+  t_start <- x$R$t_start
+  t_end <- x$R$t_end
+  dates <- x$dates
+  mean_posterior <- x$R[, "Mean(R)"]
+  median_posterior <- x$R[, "Mean(R)"]
+  quantile_0.025_posterior <- x$R[, "Quantile.0.025(R)"]
+  quantile_0.975_posterior <- x$R[, "Quantile.0.975(R)"]
+  
+  return(data.frame(
+   # start = dates[t_start], 
+    dates = dates[t_end], 
+    rt_mean = mean_posterior,
+    rt_median = median_posterior,
+    lower = quantile_0.025_posterior,
+    upper = quantile_0.975_posterior))
+}
+
+augment_original_data <- function(data, Rt_model){
+  data %>% left_join(process_rt(Rt_model))
+}
+
+division_of_interest <- c("California", "Tennessee", "Oregon", "Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")
+Rt_output_df <- Rt_input_df %>%
+  filter(division %in% division_of_interest) %>%
+  nest(-division, -pango_lineage) %>% 
+  mutate(model = map(data, ~get_Rt(.)),  # Compute Rt
+         aug_data = map2(.x = data, .y = model, ~ augment_original_data(.x, .y))) %>% # Process Rt data
+  select(division, pango_lineage, aug_data) %>%
+  unnest(aug_data)
+```
+
+
+```{r, fig.height=10, fig.width=10}
+Rt_output_df %>%
+  ggplot(aes(x = dates,id = division)) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_line(aes(y = rt_median, color = pango_lineage),) + 
+  facet_wrap( ~ division) + 
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = pango_lineage), alpha = 0.2) +
+  ylim(NA, 2)
+```
+
+
+Question: Does assuming that we have a multinomial regression fit on the frequencies enforce a condition on R being just a constant multiple of all other lineages? Or some other constraint?
+
+That is, is there an easy relationship between relative Rt and the variant specific exponential growth rates $r_{v}$? Olympics paper should be a good starting point for this.
+
+```{r, fig.height=10, fig.width=10}
+Rt_output_df %>%
+  ggplot(aes(x = dates, id = pango_lineage)) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_line(aes(y = rt_median, color = division)) + 
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = division), alpha = 0.1) +
+  facet_wrap( ~ pango_lineage) + 
+  ylim(NA, 2)
+```
