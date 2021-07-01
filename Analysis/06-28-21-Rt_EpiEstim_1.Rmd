@@ -1,0 +1,176 @@
+---
+title: "06-28-21-Rt_EpiEstim_1"
+author: "Eslam Abousamra"
+date: "6/28/2021"
+output: word_document
+---
+
+
+### @article{Cori2013, author={Cori, A and Ferguson, NM and Fraser, C and Cauchemez, S},
+###year={2013},
+###title={{A New Framework and Software to Estimate Time-Varying Reproduction Numbers During ###Epidemics}},
+###journal={Am. J. Epidemiol.},
+###doi={10.1093/aje/kwt133},
+###}
+
+
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(EpiEstim)
+library(cowplot)
+
+```
+
+
+# Importing and reading tidy dataset
+```{r}
+full_data = read.csv("Rt_est_cdc&GISAID2.csv")
+
+```
+
+
+# Initial exploratory analysis 
+```{r}
+
+#Exploratory analysis (predicted frequencies)
+
+#Visualizing frequencies for lineages of concern
+full_data %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
+   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617")) %>%
+  
+  ggplot(aes(x=(as.Date(date)), y = pred_freq, color = pango_lineage)) + 
+  geom_line() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+
+
+#Visualizing predicted cases for lineages of concern
+full_data %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
+   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617")) %>%
+  
+  ggplot(aes(x=(as.Date(date)), y = pred_cases, color = pango_lineage)) + 
+  geom_line() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank()) +
+  geom_smooth()
+
+
+
+
+```
+
+
+# Estimating Rt using EpiEstim Package
+
+## Initial Analysis of Rt 
+
+
+# Estimating Rt for nested group of states and lineages
+
+## Preparing dataset and creating helper functions to process
+
+```{r}
+
+
+#Customizing variables to pass in the EpiEstim Package
+
+Rt_data = full_data %>% 
+  select(date, pango_lineage, division, pred_cases) %>% 
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
+   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617"))    %>%
+  rename(
+    I = pred_cases #Renaming the predicted smoothed cases > incidence (I)
+  ) %>%
+  rename(
+    dates = date
+  ) %>% 
+  mutate(dates = as.Date(dates)) %>%
+  mutate(I = abs(I)) #estimate absolute value of Incidence
+
+
+#Create Rt estimate function
+#Serial interval distribution (Gamma) parameters obtained from literature
+
+get_Rt <- function(tbl){ #Argument pass tibble (data)
+  Rt = estimate_R(tbl,
+             method = "parametric_si", #Specifying method of serial interval estimation
+           config = make_config(list(
+             mean_si = 5.2,
+             std_si = 2.8)))
+  return(Rt)
+}
+
+
+# Processing Rt and extracting mean R value
+
+process_rt = function(x){
+  t_start = x$R$t_start
+  t_end = x$R$t_end
+  dates = x$dates
+  mean_posterior = x$R[, "Mean(R)"]
+  quantile_0.025_posterior <- x$R[, "Quantile.0.025(R)"]
+  quantile_0.975_posterior <- x$R[, "Quantile.0.975(R)"]
+  return(data.frame(
+    dates = dates[t_end],
+    meanR = mean_posterior,
+    lower = quantile_0.025_posterior,
+    upper = quantile_0.975_posterior))
+}
+
+
+#nest division, lineage to pass in Rt estimate function
+
+Rt_output = Rt_data %>% 
+  nest(-division, -pango_lineage) %>%
+  mutate(Rt_est = map(data, ~get_Rt(.)) , 
+         R_value = map(Rt_est, ~process_rt(.)),
+         R_mod = map2(.x = data, .y= R_value, ~left_join(.x,.y))) %>% 
+  select(division, pango_lineage, R_mod) %>%
+  unnest(R_mod)
+
+
+
+
+```
+
+
+
+# Visualization
+```{r}
+#Plotting Rt
+
+
+ggplot(Rt_output, aes(x = dates, y = meanR, colour =pango_lineage)) + 
+  facet_wrap(vars(division)) +
+  geom_smooth() +
+  geom_errorbar(aes(ymin = lower, ymax = upper) ,width=0.5,size=0.1)+ 
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank()) +
+  ylim(NA,2)
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
