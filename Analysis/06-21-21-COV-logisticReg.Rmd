@@ -174,7 +174,7 @@ multinomial_frame <- mod_df_wide %>%
   # Augment original data with predictions
   select(covmeta_raw.division, data, model) %>%
   unnest(data)
-??nnet
+
 multinomial_frame
 ```
 
