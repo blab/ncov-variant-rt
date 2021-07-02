@@ -30,8 +30,20 @@ The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to htt
 
 Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency growth (estimated from the GISAID metadata) and perfoming initial exploratory analysis and visualizing the competition among the lineages within divisions in the US. 
 
+Example: Tidying the dataset 
+
+1. Navigate in R the code found below to perform the multinomial logistic regression and merge the desired dataset
+
+> Rt_MLR_dataset_tidy.Rmd
 
 
+
+2. Output tidy dataset with the multinomial logistic regression as
+
+> write.csv(final_mod, "Rt_MLR_cdc&GISAID2.csv")
+
+
+-  
 
 
 
