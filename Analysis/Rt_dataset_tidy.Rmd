@@ -1,0 +1,132 @@
+---
+title: "06-23-21-Rt_dataset_tidy.Rmd"
+author: "Eslam Abousamra"
+date: "6/23/2021"
+output: word_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(modelr)
+library(devtools)
+library(openintro)
+library(EpiEstim)
+library(data.table)
+
+```
+
+
+
+# Reading and sorting datasets
+## Preparing Rt estimation dataset
+
+## Reading and cleaning datasets to preparing for merging 
+
+
+```{r}
+cdc_raw = read.csv("cdc-data.csv")
+covmeta_raw = read.csv("metadata-usa.csv")
+```
+
+```{r}
+#Dataset 1
+
+init_df = covmeta_raw %>% select(date, division,pango_lineage)
+
+#Standardizing date
+init_df = init_df %>% mutate(
+  date = as.Date(date, format("%m/%d/%y"))
+) 
+
+init_df
+
+
+#Dataset 2
+
+#Import and tidy data
+cdc_mod = cdc_raw %>% select(submission_date, state, new_case)
+
+#Rename variables
+cdc_mod = cdc_mod %>% 
+  rename(
+    date = submission_date
+  )
+#converting state abbreviation to full name
+cdc_mod = cdc_mod %>% mutate(newstate =
+  abbr2state(state))
+cdc_mod
+
+#Renaming variables
+cdc_mod = cdc_mod %>% select(date, newstate, new_case) %>%
+  rename(
+    division = newstate
+  ) %>%
+  filter(!is.na(division))
+  
+#Standardizing date
+cdc_mod = cdc_mod %>% mutate(
+  date = as.Date(date, format("%m/%d/%Y"))
+) 
+
+view(cdc_mod)
+
+```
+
+
+# Merging two datasets 
+
+
+```{r}
+#Joining the two datasets
+init_df_new= init_df
+
+var_of_concern = c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617.2")
+
+#tidying and prepping the dataset
+init_df_new = init_df_new %>%
+  mutate(pango_lineage = case_when(pango_lineage %in% var_of_concern ~ pango_lineage, TRUE ~ "other")) %>%
+  count(date, pango_lineage, division)%>%
+  group_by(date, division) %>%
+  mutate(totalcount = sum(n))%>% 
+  ungroup() %>% 
+  mutate(freq = n/totalcount) 
+
+init_df_new 
+```
+
+
+
+
+# Joining the dataset
+```{r}
+
+
+initial_mod = init_df_new %>% left_join(cdc_mod) 
+
+initial_mod
+
+write.csv(initial_mod, "Rt_cdc&GISAID.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
