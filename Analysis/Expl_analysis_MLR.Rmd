@@ -1,0 +1,133 @@
+---
+title: "Multinomial Logistic Regression"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(devtools)
+library(openintro)
+library(EpiEstim)
+library(data.table)
+
+```
+
+
+
+
+
+# Read tidy dataset
+```{r}
+
+
+tidy_dataset = read.csv("Rt_cdc&GISAID.csv") %>%
+  mutate(date = as.Date(date)) %>%
+  select(-X) 
+
+
+
+# Wide dataset (resorting lineages) to pass in multinomial regression model
+tidy_wider = tidy_dataset %>%
+  rename(sequences = n) %>%
+  pivot_wider(names_from = pango_lineage, values_from = c(sequences, freq), values_fill = 0) 
+
+tidy_wider
+
+
+```
+
+
+
+#Smoothing Frequencies and predicted cases of lineages
+#Fitting a multinomial logistic regression 
+
+```{r}
+
+## Adding Mulitnomial Regression Fit
+
+library(lubridate)
+library(nnet)
+
+#Create matrix tibble for states 
+
+get_division_mat <- function(tbl){
+  return(tbl %>%
+  select(starts_with("sequences")) %>% # Get sequence counts
+  rename_all(~str_replace(.,"^sequences","pred_freq")) %>% # Rename variable for later
+  as.matrix())
+}
+
+
+get_division_times <- function(tbl){
+  dt_mat <- tbl %>%
+  select(date) %>%
+  mutate(times = yday(date),
+         times = (times - min(times)) / (max(times) - min(times))) # Transform times for easy fitting
+  return(dt_mat$times)
+}
+
+
+#Fitting the multinomial frame
+
+
+multinomial_frame <- tidy_wider %>%
+  select(date, division, starts_with("sequences")) %>%
+  nest(-division) %>%
+# Nest by division
+  mutate(division_mat = map(data, ~get_division_mat(.)), # Get counts 
+         division_times = map(data, ~get_division_times(.)), # Get times
+         model = map2(.x = division_mat, .y = division_times, ~multinom(.x ~ .y, trace = FALSE, MaxNWts = 100000)),
+         predictions = map(model, ~ predict(., type = "prob")),  # Get predictions
+         data = map2(.x = data, .y = predictions, ~ cbind(.x, .y))) %>% 
+  # Augment original data with predictions
+  select(division, data, model) %>%
+  unnest(data)
+
+
+multinomial_frame
+
+
+
+
+```
+
+#Reverting to longer format
+
+```{r}
+ multinomial_final <- multinomial_frame %>%
+  select(division, date, starts_with("pred_freq")) %>%
+  pivot_longer(starts_with("pred_freq"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_","")) %>%
+  select(division, date, pango_lineage, pred_freq)
+
+
+```
+
+#Merging the dataset
+#Writing final dataset
+
+```{r}
+
+
+
+#Final dataset with multinomial regression
+#Rt Estimation dataset
+
+final_mod = tidy_dataset %>%
+  left_join(multinomial_final) %>%
+  mutate(pred_cases = pred_freq * new_case)
+
+
+
+final_mod
+
+#save file as an excel sheet
+write.csv(final_mod, "Rt_MLR_cdc&GISAID.csv")
+
+
+
+```
+
