@@ -1,0 +1,136 @@
+---
+title: "07-01-21-Rt_Epinow_2"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(EpiNow2)
+```
+
+# Reading tidy dataset with MLR
+
+```{r}
+tidy_data = read.csv("Rt_MLR_cdc&GISAID.csv") %>%
+  select(
+    -X) 
+
+test = tidy_data %>%
+  filter(pango_lineage %in% c("B.1.1.7")) %>%
+  filter(division %in% c("Washington")) %>% 
+  mutate(date= as.Date(date))
+
+test2= tidy_data %>% select(date, pango_lineage, division, pred_cases) %>% 
+  filter(division %in% c("New York", "Texas"))  %>%
+   filter(pango_lineage %in% c("B.1.1.7","B.1.617.2")) %>% 
+  mutate(date= as.Date(date))
+
+
+```
+
+#Defining the parameters for the epiNow Estimation
+
+
+```{r}
+
+
+reporting_delay = list(mean = convert_to_logmean(4, 1),
+                        mean_sd = 0.1,
+                        sd = convert_to_logsd(4, 1),
+                        sd_sd = 0.1,
+                        max = 15)
+
+
+
+#Estimated Generation time and incubation period adopted from literature
+generation_time = get_generation_time(disease = "SARS-CoV-2", source = "ganyani")
+
+
+incubation_period = get_incubation_period(disease = "SARS-CoV-2", source = "lauer")
+
+
+#Define reported cases as the predicted smoothed cases
+
+
+#helper function
+
+
+get_reported_cases = function(tbl){
+  reported_cases = tbl %>% select(date,pred_cases) %>%
+  rename(confirm = pred_cases) %>%
+  mutate_at(vars(confirm), ~ as.integer(round(.x)))
+  return(reported_cases)
+}
+
+
+
+```
+
+
+
+
+```{r}
+
+output = test2 %>% 
+  nest(-division, -pango_lineage) %>%
+  mutate(reported_cases = map(data, ~get_reported_cases(.)))
+
+
+get_epinow = function(reported_cases){
+  Rt_est = epinow(reported_cases = reported_cases,
+       generation_time = generation_time, #assuming gamma distribution
+       delays = delay_opts(incubation_period, reporting_delay),
+       rt = rt_opts(prior = list(mean = 1.5, sd = 0.5)), #define Rt estimates 
+       gp = gp_opts(basis_prop = 0.2), # define Gaussain process
+       stan = stan_opts(),
+       horizon = 14, #define period to forecast
+       return_output = TRUE)
+  return(Rt_est)
+  
+}
+
+output = output %>% 
+  mutate(Rt_est = map(reported_cases, ~get_epinow(.)))
+
+# summary of the latest estimates
+summary(output)
+summary(output, type = "parameters", params = "R")
+
+# plot estimates
+plot(out)
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
