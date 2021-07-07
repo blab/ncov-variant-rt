@@ -148,7 +148,7 @@ library(nnet)
 
 get_division_mat <- function(tbl){
   return(tbl %>%
-  select(starts_with("sequences"), -sequence_total) %>% # Get sequence counts
+  select(starts_with("sequences")) %>% # Get sequence counts
   rename_all(~str_replace(.,"^sequences","pred_freq")) %>% # Rename variable for later
   as.matrix())
 }
