@@ -73,6 +73,12 @@ Here we quantify transmissibility throughout an epidemic from the analysis of ti
 > install.packages("EpiEstim")
 
 
+### Model Implementation
+
+
+
+
+
 Citation: Anne Cori, Neil M. Ferguson, Christophe Fraser, Simon Cauchemez, A New Framework and Software to Estimate Time-Varying Reproduction Numbers During Epidemics, American Journal of Epidemiology, Volume 178, Issue 9, 1 November 2013, Pages 1505–1512.
 
 
@@ -91,12 +97,24 @@ Citation: Anne Cori, Neil M. Ferguson, Christophe Fraser, Simon Cauchemez, A New
 
 
 
-
-
-
-
 ## EpiNow
-Here we 
+
+Using this package, we can estimate Rt through a Bayesian variable approach using the probabilistic programming language Stan. According to a gaussian process, the fitted model of Rt is an multivariate normal distribution function. 
+
+
+### Installation
+
+> install.packages("EpiNow2")
+
+### Model Implementation
+
+
+
+
+
+
+
+Citation: Abbott SHellewell J, Sherratt K, Gostic K, Hickson J, Badr HS, DeWitt M, Thompson R, EpiForecasts , Funk S. 2020EpiNow2: estimate real-time case counts and time-varying epidemiological parameters. 
 
 
 
