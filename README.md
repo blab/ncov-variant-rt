@@ -126,7 +126,9 @@ Using this package, we can estimate Rt through a Bayesian variable approach usin
 
 ### Model Implementation
 
+1. Navigate in R the code found in the Rmd file below to run the analysis for the tidy data
 
+> 07-01-21-Rt_EpiNow_2.Rmd 
 
 
 
