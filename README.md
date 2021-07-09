@@ -44,13 +44,13 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 
 ### Smoothing frequency (Multinomial Logistic Regression)
 
-1. Navigate in R the code found in the Rmd file below to perform the MLR
+1. Navigate in R the code found in the Rmd file below to input tidy dataset and perform the MLR 
 
 
 > Expl_analysis_MLR.Rmd
 
 
-2. Output tidy dataset with regression parameters as
+2. Output tidy dataset with regression parameters to pass in the estimation models as
 
 > write.csv(final_mod, "Rt_MLR_cdc&GISAID.csv")
 
