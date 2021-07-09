@@ -4,7 +4,7 @@ Analysis of state-by-variant Rt estimates using CDC and GISAID data
 
 Eslam Abousamra, John Huddleston, Marlin Figgins
 
-This project involves a demonstration to build out a framework to perform comparative measurements of the effective reproductive number (Rt) using several methodologies, mostly involving Rstudio epidemiological tool packages which include EpiEstim (Cori A. et al., 2013), EpiNow (Abbott S. et al., 2020), ...
+This project involves a demonstration to build out a framework to perform comparative measurements of the effective reproductive number (Rt) using bayesian inference methods of estimation, mostly involving Rstudio epidemiological tool packages which include EpiEstim (Cori A. et al., 2013), EpiNow (Abbott S. et al., 2020), ...
 
 # Tidying Data
 
@@ -117,6 +117,8 @@ list obtained from the cdc and can be altered according to the desired analysis,
 
 Using this package, we can estimate Rt through a Bayesian variable approach using the probabilistic programming language Stan. According to a gaussian process, the fitted model of Rt is an multivariate normal distribution function. 
 
+*Citation: Abbott SHellewell J, Sherratt K, Gostic K, Hickson J, Badr HS, DeWitt M, Thompson R, EpiForecasts , Funk S. 2020EpiNow2: estimate real-time case counts and time-varying epidemiological parameters.*
+
 
 ### Installation
 
@@ -130,7 +132,6 @@ Using this package, we can estimate Rt through a Bayesian variable approach usin
 
 
 
-*Citation: Abbott SHellewell J, Sherratt K, Gostic K, Hickson J, Badr HS, DeWitt M, Thompson R, EpiForecasts , Funk S. 2020EpiNow2: estimate real-time case counts and time-varying epidemiological parameters. 
 
 
 
