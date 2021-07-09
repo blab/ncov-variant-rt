@@ -68,6 +68,8 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 
 Here we quantify transmissibility throughout an epidemic from the analysis of time series of incidence as described in Cori et al. (2013) on SARS-CoV-2 data.
 
+*Citation: Anne Cori, Neil M. Ferguson, Christophe Fraser, Simon Cauchemez, A New Framework and Software to Estimate Time-Varying Reproduction Numbers During Epidemics, American Journal of Epidemiology, Volume 178, Issue 9, 1 November 2013, Pages 1505–1512.*
+
 ### Installation
 
 > install.packages("EpiEstim")
@@ -87,10 +89,13 @@ list obtained from the cdc and can be altered according to the desired analysis,
 ![image](https://user-images.githubusercontent.com/84752326/125135007-28a0ce00-e0bd-11eb-9040-3f64bde083ac.png)
 
 
+## Visualizing Rt estimated from the EpiEstim package on a number of states 
+
+
+![image](https://user-images.githubusercontent.com/84752326/125135608-225f2180-e0be-11eb-82d7-e413702f4194.png)
 
 
 
-Citation: Anne Cori, Neil M. Ferguson, Christophe Fraser, Simon Cauchemez, A New Framework and Software to Estimate Time-Varying Reproduction Numbers During Epidemics, American Journal of Epidemiology, Volume 178, Issue 9, 1 November 2013, Pages 1505–1512.
 
 
 
@@ -125,7 +130,7 @@ Using this package, we can estimate Rt through a Bayesian variable approach usin
 
 
 
-Citation: Abbott SHellewell J, Sherratt K, Gostic K, Hickson J, Badr HS, DeWitt M, Thompson R, EpiForecasts , Funk S. 2020EpiNow2: estimate real-time case counts and time-varying epidemiological parameters. 
+*Citation: Abbott SHellewell J, Sherratt K, Gostic K, Hickson J, Badr HS, DeWitt M, Thompson R, EpiForecasts , Funk S. 2020EpiNow2: estimate real-time case counts and time-varying epidemiological parameters. 
 
 
 
