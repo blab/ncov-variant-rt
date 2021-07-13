@@ -1,0 +1,170 @@
+---
+title: "07-12-21_CV_MLR"
+author: "Eslam Abousamra"
+date: "7/12/2021"
+output: html_document
+---
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(lattice)
+library(caret)
+library(rpart)
+library(Metrics)
+library(Matrix)
+library(caret)
+library(lubridate)
+library(nnet)
+library(rsample)
+
+
+```
+
+# Read Dataset and select relevant vars
+
+```{r}
+tidy_data = read.csv("Rt_MLR_cdc&GISAID.csv")%>%
+  select(-X) %>% 
+  mutate(date= as.Date(date)) %>%
+  select(date, pango_lineage, division, n)
+```
+
+# Pre-processing
+# Create training data, testing data
+```{r}
+
+#Create helper functions
+
+#getting division matrix
+get_division_mat <- function(tbl){
+  return(tbl %>%
+           select(-date, -times) %>% # Get sequence counts
+           rename_all(~str_replace(.,"^sequences","pred_freq")) %>% # Rename variable for later
+           as.matrix())
+}
+
+#getting division times
+get_division_times <- function(tbl){
+  dt_mat <- tbl %>%
+    select(date) %>%
+    mutate(times = yday(date),
+           times = (times - min(times)) / (max(times) - min(times))) # Transform times for easy fitting
+  return(dt_mat %>% select(times))
+}
+
+
+#Wide Dataset
+
+tidy_wider = tidy_data %>%
+  rename(sequences = n) %>%
+  pivot_wider(names_from = pango_lineage, values_from = sequences, names_prefix= "sequences_", values_fill = 0) %>%
+  nest(-division) %>% 
+    mutate(data = map(.x = data, ~cbind(.x, get_division_times(.)))) %>%
+  #splitting dataset > training, testing
+  mutate(tt_split = map(data, ~ initial_split(., prop = 0.8)),
+         train_data = map(tt_split, ~ training(.)),
+         test_data = map(tt_split, ~ testing(.))) %>%
+  mutate(division_mat_tr = map(train_data, ~get_division_mat(.))) %>% # Get counts for training data 
+    mutate(division_mat_ts = map(test_data, ~get_division_mat(.)))
+
+  
+ 
+
+
+``` 
+
+
+# Preprocessing data
+### Create training, test, and validation sets
+```{r}
+
+
+#Monte Carlo cross-validation (0.9/0.1) with 30 resamples  
+validation_data = mc_cv(housing_train, prop = 0.9, times = 30)
+validation_data
+
+```
+
+
+```{r}
+
+
+## Fitting log multinomial regression to training data
+
+train_mlr = tidy_wider %>%
+  mutate(model_tr = map2(.x = division_mat_tr, .y = train_data, ~multinom(.x ~ times, data = .y, trace = FALSE, MaxNWts = 100000, model = TRUE)),
+         predictions_tr = map(model_tr, ~ predict(., type = "prob")),# Get predictions
+         data_tr = map2(.x = train_data, .y = predictions_tr, ~cbind(.x, .y)))
+
+  
+## predicting test data
+test_mlr = train_mlr %>% 
+  mutate(predictions_test = map2(.x = model_tr, .y = test_data,
+                                 ~ predict(.x, type="probs", newdata= .y)),#Predict test by a trained set
+         data_ts = map2(.x = test_data, .y = predictions_test, ~ cbind(.x, .y)))
+
+test_mlr[[12]][[1]]
+left_join(.x, .y, copy = TRUE)
+```
+
+# Sorting data for pivoting longer
+
+```{r}
+
+
+add_id = function(tbl, value){
+  tbl %>% 
+    add_column(id = value)
+}
+
+
+#adding IDs to training and test dataset 
+
+final_data = test_mlr %>%
+  select(division, data_tr, data_ts, model_tr) %>% mutate(
+    data_tr = map(.x= data_tr, ~add_id(.,"train")), 
+    data_ts = map(.x= data_ts, ~add_id(.,"test"))) %>% mutate(
+      data = map2(.x = data_tr, .y = data_ts, ~bind_rows(.x,.y))) %>% unnest(data) #binding rows and unnesting the data
+
+
+
+
+
+
+
+
+sort_data = function(tbl){
+  cv_data = select(division, data_ts, data_tr) %>% 
+    pivot_longer(starts_with("sequences"), names_to = "pango_lineage", values_to = "test_sequences") %>%
+    mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_",""))
+  return(cv_data)
+}
+
+test_mlr %>% unnest(test_mlr) %>% select(division, data_ts, data_tr) %>% 
+    pivot_longer(starts_with("sequences"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+    mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_",""))
+
+
+
+
+
+
+```
+
+```{r}
+
+testing_rec <- prep(get_housing_tr(housing_test), testing = housing_test)
+
+test_data <- bake(testing_rec, newdata = housing_test)
+
+
+trainmlr_rec <- prep(get_housing_tr(housing_train), testing = housing_train)
+
+trainmlr_data <- bake(trainmlr_rec, newdata = housing_train)
+
+
+
