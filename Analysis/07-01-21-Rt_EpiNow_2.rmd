@@ -100,7 +100,7 @@ summary(output)
 summary(output, type = "parameters", params = "R")
 
 # plot estimates
-plot(out)
+plot(output)
 
 
 
