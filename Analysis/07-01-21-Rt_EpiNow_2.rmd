@@ -92,8 +92,39 @@ get_epinow = function(reported_cases){
   
 }
 
+#Running the model
 output = output %>% 
   mutate(Rt_est = map(reported_cases, ~get_epinow(.)))
+
+
+```
+
+
+# Process values to extract R values
+```{r}
+
+#Extract R values
+process_Rt <- function(model){
+  return(model$estimates$summarised %>%
+           tibble() %>%
+           filter(variable %in% c("R")))
+}
+
+#Join values
+augument_data <- function(data, model){
+  return(left_join(data, model))
+}
+
+#Run the functions
+with_epinow2_outs <- output %>% 
+  mutate(rt_results = map(Rt_est, ~process_Rt(.))) %>%
+  mutate(aug_data = map2(.x = data, .y = rt_results, ~augument_data(.x, .y))) %>%
+  select(pango_lineage, division, aug_data, Rt_est) %>%
+  unnest(aug_data)
+
+
+
+
 
 # summary of the latest estimates
 summary(output)
