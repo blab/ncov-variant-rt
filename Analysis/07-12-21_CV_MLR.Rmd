@@ -20,7 +20,7 @@ library(caret)
 library(lubridate)
 library(nnet)
 library(rsample)
-
+library(ggrepel)
 
 ```
 
@@ -65,7 +65,7 @@ tidy_wider = tidy_data %>%
   nest(-division) %>% 
     mutate(data = map(.x = data, ~cbind(.x, get_division_times(.)))) %>%
   #splitting dataset > training, testing
-  mutate(tt_split = map(data, ~ initial_split(., prop = 0.8)),
+  mutate(tt_split = map(data, ~ initial_time_split(., prop = 0.6)),
          train_data = map(tt_split, ~ training(.)),
          test_data = map(tt_split, ~ testing(.))) %>%
   mutate(division_mat_tr = map(train_data, ~get_division_mat(.))) %>% # Get counts for training data 
@@ -80,14 +80,6 @@ tidy_wider = tidy_data %>%
 
 # Preprocessing data
 ### Create training, test, and validation sets
-```{r}
-
-
-#Monte Carlo cross-validation (0.9/0.1) with 30 resamples  
-validation_data = mc_cv(housing_train, prop = 0.9, times = 30)
-validation_data
-
-```
 
 
 ```{r}
@@ -107,8 +99,7 @@ test_mlr = train_mlr %>%
                                  ~ predict(.x, type="probs", newdata= .y)),#Predict test by a trained set
          data_ts = map2(.x = test_data, .y = predictions_test, ~ cbind(.x, .y)))
 
-test_mlr[[12]][[1]]
-left_join(.x, .y, copy = TRUE)
+
 ```
 
 # Sorting data for pivoting longer
@@ -127,26 +118,35 @@ add_id = function(tbl, value){
 final_data = test_mlr %>%
   select(division, data_tr, data_ts, model_tr) %>% mutate(
     data_tr = map(.x= data_tr, ~add_id(.,"train")), 
-    data_ts = map(.x= data_ts, ~add_id(.,"test"))) %>% mutate(
-      data = map2(.x = data_tr, .y = data_ts, ~bind_rows(.x,.y))) %>% unnest(data) #binding rows and unnesting the data
+    data_ts = map(.x= data_ts, ~add_id(.,"test"))) %>%
+  mutate(
+      data = map2(.x = data_tr, .y = data_ts, ~bind_rows(.x,.y))) %>% 
+  unnest(data) %>% #binding rows and unnesting the data
+  select(-data_tr, -data_ts)
+ 
+final_data
+#reverting to longer format through pivoting 
+final_data = final_data %>%
+  select(division, date, starts_with("pred_freq"), id) %>%
+  pivot_longer(starts_with("pred_freq"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_","")) %>%
+  select(division, date, pango_lineage, pred_freq, id)
+
+
+f_data = final_data %>%
+  left_join(tidy_data) %>% 
+  mutate(n = replace_na(n, 0)) %>% group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>% # Compute total sequences observed on that day in that place
+  ungroup() %>%
+  mutate(obs_freq = n / sequence_total) # Compute total frequency of lineage for each day and division
+
+f_data
+final_data
+tidy_data
 
 
 
 
-
-
-
-
-sort_data = function(tbl){
-  cv_data = select(division, data_ts, data_tr) %>% 
-    pivot_longer(starts_with("sequences"), names_to = "pango_lineage", values_to = "test_sequences") %>%
-    mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_",""))
-  return(cv_data)
-}
-
-test_mlr %>% unnest(test_mlr) %>% select(division, data_ts, data_tr) %>% 
-    pivot_longer(starts_with("sequences"), names_to = "pango_lineage", values_to = "pred_freq") %>%
-    mutate(pango_lineage = str_replace(pango_lineage,"^pred_freq_",""))
 
 
 
@@ -155,16 +155,45 @@ test_mlr %>% unnest(test_mlr) %>% select(division, data_ts, data_tr) %>%
 
 ```
 
+
+
+
+# Visualizing smoothed frequencies of train and test data
+
+
 ```{r}
+final_data
 
-testing_rec <- prep(get_housing_tr(housing_test), testing = housing_test)
+plot1 = f_data %>% filter(division %in% c("Michigan", "New York", "Washington", "Colorado")) %>% 
+  ggplot(aes(x=(as.Date(date)), y = obs_freq, color = pango_lineage)) + 
+  geom_smooth(aes(y = obs_freq, shape = id), se = FALSE, size= 0.5) +
+  geom_line(aes(y = pred_freq), linetype= "dashed") +
+  facet_wrap(~division) +
+  geom_vline(xintercept=as.numeric(as.Date("2021-03-05")), linetype=3, col = 'darkslategrey', size= 0.7) + annotate(geom="text",x=as.Date("2021-02-23"),
+    y = 0.95, label=c("Train"), color = "darkslategrey", size = 4) +
+  annotate(geom="text",x=as.Date("2021-03-15"),
+    y = 0.95, label=c("Test"), color = "darkslategrey", size = 4) +
+  labs(title = "", x = "", y = "Observed frequencies") + theme_classic() +
+  theme(legend.title = element_blank(),
+        panel.grid.major = element_blank(),
+        #panel.border = element_rect(),
+        axis.title.x=element_blank())
 
-test_data <- bake(testing_rec, newdata = housing_test)
+plot1
 
 
-trainmlr_rec <- prep(get_housing_tr(housing_train), testing = housing_train)
+  
+```
 
-trainmlr_data <- bake(trainmlr_rec, newdata = housing_train)
+
+
+
+
+
+
+
+
+
 
 
 
