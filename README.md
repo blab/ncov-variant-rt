@@ -42,17 +42,33 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 > write.csv(initial, "Rt_cdc&GISAID2.csv")
 
 
-### Smoothing frequency (Multinomial Logistic Regression)
+### Initial Analysis: Smoothing frequency (Multinomial Logistic Regression)
 
 1. Navigate in R the code found in the Rmd file below to input tidy dataset and perform the MLR 
 
 
 > Expl_analysis_MLR.Rmd
 
+## Visualizing smoothed frequencies for lineages of concern (B.1.1.7, B.1.351, P.1, B.1.427, B.1.617)
+list obtained from the cdc and can be altered according to the desired analysis, please refer to https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html for a complete SARS-CoV-2 Variant Classifications
+
+![image](https://user-images.githubusercontent.com/84752326/125135007-28a0ce00-e0bd-11eb-9040-3f64bde083ac.png)
+
+
+## Visualizing Cross Validation of smoothed frequencies 
+
+![Crossvalidation_MLR](https://user-images.githubusercontent.com/84752326/125874392-c0eb66c8-c9ea-4655-8806-f2f8698f64bb.png)
+
+
+
+
+
+
 
 2. Output tidy dataset with regression parameters to pass in the estimation models as
 
 > write.csv(final_mod, "Rt_MLR_cdc&GISAID.csv")
+
 
 
 
@@ -82,11 +98,6 @@ Here we quantify transmissibility throughout an epidemic from the analysis of ti
 > 06-28-21-Rt_EpiEstim_1.Rmd
 
 
-
-## Visualizing smoothed frequencies for lineages of concern (B.1.1.7, B.1.351, P.1, B.1.427, B.1.617)
-list obtained from the cdc and can be altered according to the desired analysis, please refer to https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html for a complete SARS-CoV-2 Variant Classifications
-
-![image](https://user-images.githubusercontent.com/84752326/125135007-28a0ce00-e0bd-11eb-9040-3f64bde083ac.png)
 
 
 ## Visualizing Rt estimated from the EpiEstim package on a number of states 
