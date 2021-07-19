@@ -1,0 +1,145 @@
+---
+title: "Fitting SARS-CoV-2 variant frequency growth using (multinomial) logistic regression"
+author: "Marlin Figgins"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+```
+
+
+## Loading and processing data
+
+```{r}
+raw_df = read.csv("../metadata-usa.clean.csv") %>% select(date, pango_lineage, division)
+```
+
+```{r}
+variants.list <- c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617.2") 
+
+long_df <- raw_df %>%
+  mutate(date = as.Date(date)) %>% # Use datetime
+  mutate(pango_lineage = case_when(pango_lineage %in% variants.list ~ pango_lineage, # pango_lineage to variants we care about
+                                   TRUE ~ "other"))
+
+clean_df <- long_df %>%
+  count(date, pango_lineage, division) %>% # Count occurrence of each lineage and division
+  group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>% # Compute total sequences observed on that day in that place
+  ungroup() %>%
+  mutate(freq = n / sequence_total) # Compute total frequency of lineage for each day and division
+
+clean_df_wide <- clean_df %>% # Pivot to wide format for passing to models
+  rename(sequences = n) %>%
+  pivot_wider(names_from = pango_lineage, values_from = c(sequences, freq), values_fill = 0) 
+```
+
+```{r}
+valid.divisions <- long_df %>%
+  count(division, pango_lineage) %>%
+  select(-n) %>%
+  count(division) %>%
+  filter(n > 1) %>% # Get Divisions with more than one of the following variants
+  pull(division)
+
+long_df <- long_df %>% filter(division %in% valid.divisions)
+```
+
+```{r}
+long_df <- long_df %>%
+  group_by(division) %>%
+  mutate(times = yday(date), # Adding numeric times
+         pango_lineage = as.factor(pango_lineage)) %>%
+  ungroup()
+```
+
+```{r}
+library(tidymodels)
+
+# Settting Workflow for single model
+multinomial_recipe <- recipe(pango_lineage ~ times, data = long_df) %>%
+    step_normalize(all_predictors())
+
+multinomial_prep <- prep(multinomial_recipe)
+#juice(multinomial_prep)
+
+multinomial_spec <- multinom_reg() %>%
+  set_engine("nnet")
+
+multinomial_wf <- workflow() %>%
+  add_recipe(multinomial_recipe) %>%
+  add_model(multinomial_spec)
+```
+
+```{r}
+# Fitting Single Model
+model_results <- fit(multinomial_wf, long_df %>%
+  filter(division == "Michigan"))
+
+times_to_predict <- long_df %>%
+  filter(division == "Michigan") %>%
+  distinct(date, times)
+  
+pred_df <-cbind(times_to_predict, predict(model_results, times_to_predict, type = "prob")) %>%
+  distinct(date, .keep_all = TRUE) %>%
+  pivot_longer(starts_with(".pred"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^.pred_",""))
+
+pred_df
+```
+
+```{r}
+fit_single_workflow <- function(wf, data){
+  # Fitting Single Model
+  model_results <- fit(wf, data)
+}
+
+get_single_preds <- function(model, data){
+  times_to_predict <- data %>%
+    distinct(date, times)
+  
+  cbind(times_to_predict, predict(model, times_to_predict, type = "prob")) %>% # Combine data and model
+    distinct(date, .keep_all = TRUE) %>% # Reduce to values by time
+    pivot_longer(starts_with(".pred"), names_to = "pango_lineage", values_to = "pred_freq") %>% # Pivot to tidy format
+    mutate(pango_lineage = str_replace(pango_lineage,"^.pred_","")) # Fix pango_lineage
+}
+
+model_results_nest <- long_df %>%
+  nest(-division) %>%
+  mutate(model = map(data, ~ fit_single_workflow(multinomial_wf, .)),
+         model_pred = map2(model, data, ~ get_single_preds(.x, .y)))
+
+model_results <- model_results_nest %>%
+  select(division, model_pred) %>%
+  unnest(model_pred)
+```
+
+```{r}
+model_results %>%
+  ggplot(aes(x = date, color = pango_lineage)) +
+  geom_line(aes(y = pred_freq), lwd = 1.5) +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(), 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank())
+```
+```{r}
+aug_df <- model_results %>% left_join(clean_df %>% select(-sequence_total)) %>%
+  mutate(n = replace_na(n, 0),
+         freq = replace_na(freq, 0)) %>%
+  group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>%
+  ungroup()
+```
+
+```{r}
+
+# Fitting bootstraps
+bt <- bootstraps(long_df %>% filter(division == "Michigan"))
+tst <- fit_resamples(multinomial_wf, bt) # Fitting to resamples
+                                         # We'll need to divise a custom metric?
+```
+## Fitting Resamples
+
