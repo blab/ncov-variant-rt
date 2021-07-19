@@ -97,8 +97,11 @@ fit_single_workflow <- function(wf, data){
 }
 
 get_single_preds <- function(model, data){
-  times_to_predict <- data %>%
-    distinct(date, times)
+  # Make sure all dates in range have predictions
+  times <- seq(min(data$times), max(data$times))
+  date <- times + min(data$date)
+  
+  times_to_predict <- data.frame(times = times, date = date)
   
   cbind(times_to_predict, predict(model, times_to_predict, type = "prob")) %>% # Combine data and model
     distinct(date, .keep_all = TRUE) %>% # Reduce to values by time
@@ -133,7 +136,12 @@ aug_df <- model_results %>% left_join(clean_df %>% select(-sequence_total)) %>%
   mutate(sequence_total = sum(n)) %>%
   ungroup()
 ```
-
+```{r}
+aug_df %>%
+  filter(division == "Kansas" & pango_lineage == "B.1.1.7") %>%
+  ggplot(aes(x = date, y = sequence_total)) +
+  geom_point()
+```
 ```{r}
 
 # Fitting bootstraps
