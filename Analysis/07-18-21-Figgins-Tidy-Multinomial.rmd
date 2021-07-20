@@ -13,13 +13,10 @@ library(lubridate)
 ## Loading and processing data
 
 ```{r}
-raw_df = read.csv("../metadata-usa.clean.csv") %>% select(date, pango_lineage, division)
-```
-
-```{r}
 variants.list <- c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617.2") 
 
-long_df <- raw_df %>%
+long_df <- read.csv("../metadata-usa.clean.csv") %>% 
+  select(date, pango_lineage, division) %>%
   mutate(date = as.Date(date)) %>% # Use datetime
   mutate(pango_lineage = case_when(pango_lineage %in% variants.list ~ pango_lineage, # pango_lineage to variants we care about
                                    TRUE ~ "other"))
@@ -30,10 +27,6 @@ clean_df <- long_df %>%
   mutate(sequence_total = sum(n)) %>% # Compute total sequences observed on that day in that place
   ungroup() %>%
   mutate(freq = n / sequence_total) # Compute total frequency of lineage for each day and division
-
-clean_df_wide <- clean_df %>% # Pivot to wide format for passing to models
-  rename(sequences = n) %>%
-  pivot_wider(names_from = pango_lineage, values_from = c(sequences, freq), values_fill = 0) 
 ```
 
 ```{r}
@@ -50,7 +43,7 @@ long_df <- long_df %>% filter(division %in% valid.divisions)
 ```{r}
 long_df <- long_df %>%
   group_by(division) %>%
-  mutate(times = yday(date), # Adding numeric times
+  mutate(times = 1 + (date - min(date)) / ddays(), # Adding numeric times
          pango_lineage = as.factor(pango_lineage)) %>%
   ungroup()
 ```
@@ -75,14 +68,17 @@ multinomial_wf <- workflow() %>%
 
 ```{r}
 # Fitting Single Model
-model_results <- fit(multinomial_wf, long_df %>%
-  filter(division == "Michigan"))
+state_data <- long_df %>%
+  filter(division == "Michigan")
 
-times_to_predict <- long_df %>%
-  filter(division == "Michigan") %>%
-  distinct(date, times)
+model_results <- fit(multinomial_wf, state_data)
+
+
+times <- seq(min(state_data$times), max(state_data$times))
+date <- times + min(state_data$date) - 1 
+times_to_predict <- data.frame(times = times, date = date)
   
-pred_df <-cbind(times_to_predict, predict(model_results, times_to_predict, type = "prob")) %>%
+pred_df <- cbind(times_to_predict, predict(model_results, times_to_predict, type = "prob")) %>%
   distinct(date, .keep_all = TRUE) %>%
   pivot_longer(starts_with(".pred"), names_to = "pango_lineage", values_to = "pred_freq") %>%
   mutate(pango_lineage = str_replace(pango_lineage,"^.pred_",""))
@@ -99,7 +95,7 @@ fit_single_workflow <- function(wf, data){
 get_single_preds <- function(model, data){
   # Make sure all dates in range have predictions
   times <- seq(min(data$times), max(data$times))
-  date <- times + min(data$date)
+  date <- times + min(data$date) - 1
   
   times_to_predict <- data.frame(times = times, date = date)
   
@@ -136,18 +132,11 @@ aug_df <- model_results %>% left_join(clean_df %>% select(-sequence_total)) %>%
   mutate(sequence_total = sum(n)) %>%
   ungroup()
 ```
-```{r}
-aug_df %>%
-  filter(division == "Kansas" & pango_lineage == "B.1.1.7") %>%
-  ggplot(aes(x = date, y = sequence_total)) +
-  geom_point()
-```
-```{r}
+## Fitting Resamples
 
+```{r}
 # Fitting bootstraps
 bt <- bootstraps(long_df %>% filter(division == "Michigan"))
 tst <- fit_resamples(multinomial_wf, bt) # Fitting to resamples
                                          # We'll need to divise a custom metric?
 ```
-## Fitting Resamples
-
