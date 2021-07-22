@@ -32,7 +32,9 @@ library(vegalite)
 
 # Importing and reading tidy dataset
 ```{r}
-full_data = read.csv("Rt_est_cdc&GISAID.csv")
+full_data = read.csv("Rt_cdc&GISAID_Jul_21.csv") %>%
+  select(-X) %>% 
+  rename(pango_lineage = Pango.lineage)
 
 ```
 
@@ -43,32 +45,51 @@ full_data = read.csv("Rt_est_cdc&GISAID.csv")
 #Exploratory analysis (predicted frequencies)
 
 #Visualizing frequencies for lineages of concern
-full_data %>%
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
-   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617")) %>%
+plot1 = full_data %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x= as.Date(date),y = pred_freq,  fill = division)) + 
+  geom_area() + 
+  ylab("Predicted frequencies") +
+  theme_classic() +
+  facet_wrap(~pango_lineage) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
   
-  ggplot(aes(x=(as.Date(date)), y = pred_freq, color = pango_lineage)) + 
-  geom_line() + 
+plot1
+
+plot1_2 = full_data %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x= as.Date(date),y = pred_freq,  fill = pango_lineage)) + 
+  geom_area() + 
   ylab("Predicted frequencies") +
   theme_classic() +
   facet_wrap(~division) +
   theme(legend.title = element_blank(),
-        axis.title.x=element_blank())
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+plot1_2
+
+
+
+
 
 
 #Visualizing predicted cases for lineages of concern
-full_data %>%
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
-   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617")) %>%
-  
-  ggplot(aes(x=(as.Date(date)), y = pred_cases, color = pango_lineage)) + 
-  geom_line() +
+plot2 = full_data %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "Connecticut", "Illinois", "Washington"))  %>%
+  ggplot(aes(x=as.Date(date), y = pred_cases, color = division)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = division), alpha = 0.5) +
+  ylab("Case count") +
   theme_classic() +
-  facet_wrap(~division) +
-  theme(legend.title = element_blank(), 
-        axis.title.y=element_blank(),
-        axis.title.x=element_blank()) +
-  geom_smooth(aes(y = pred_cases), se = FALSE, size= 0.5)
+  facet_wrap(~pango_lineage) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 18000)
+
+plot2
 
 
 
@@ -90,12 +111,13 @@ full_data %>%
 ```{r}
 
 
+
 #Customizing variables to pass in the EpiEstim Package
 
 Rt_data = full_data %>% 
   select(date, pango_lineage, division, pred_cases) %>% 
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington"))  %>%
-   filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617"))    %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  filter(pango_lineage %in% c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617","other")) %>%
   rename(
     I = pred_cases #Renaming the predicted smoothed cases > incidence (I)
   ) %>%
@@ -103,7 +125,8 @@ Rt_data = full_data %>%
     dates = date
   ) %>% 
   mutate(dates = as.Date(dates)) %>%
-  mutate(I = abs(I)) #estimate absolute value of Incidence
+  mutate(I = abs(I)) #estimate absolute value of Incidence 
+
 
 
 #Create Rt estimate function
@@ -146,7 +169,7 @@ Rt_output = Rt_data %>%
   select(division, pango_lineage, R_mod) %>%
   unnest(R_mod)
 
-
+write.csv(Rt_output, "Rt_EpiEstim_est.csv")
 
 
 ```
