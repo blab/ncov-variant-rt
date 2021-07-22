@@ -1,0 +1,250 @@
+---
+title: "Rt_MLR_tidy.rmd"
+author: "Eslam Abousamra"
+date: "7/20/2021"
+output: html_document
+---
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+```
+
+#reading tidy data
+```{r}
+
+cov_raw = read.table("metadata_usa_new.tsv", header=TRUE, sep ="\t") %>%
+  filter(date >= ("2021-01-01")) %>% select(date, Pango.lineage, division) %>%
+  na.omit()
+
+#Removing "?" strings
+idx = cov_raw$division =="?"
+is.na(cov_raw$division) = idx
+
+```
+
+
+```{r}
+
+vof = c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617.2") 
+
+long_df = cov_raw %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(Pango.lineage = case_when(Pango.lineage %in% vof ~ Pango.lineage,
+                                   TRUE ~ "other")) 
+  
+
+#selecting variants of interest
+                                   
+clean_df = long_df %>%
+  count(date, Pango.lineage, division) %>% # Count occurrence of each lineage and division
+  group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>% # Compute total sequences observed on that day in that place
+  ungroup() %>%
+  mutate(freq = n / sequence_total) # Compute total frequency of lineage for each day and division
+
+
+
+
+
+```
+
+
+
+```{r}
+
+valid.divisions = long_df %>%
+  count(division, Pango.lineage) %>%
+  select(-n) %>%
+  count(division) %>%
+  filter(n > 1) %>% # Get Divisions with more than one of the following variants
+  pull(division) 
+
+#Filter divisions and taking out NAs
+long_df = long_df %>% filter(division %in% valid.divisions) %>% na.omit()
+
+#adding times
+long_df <- long_df %>%
+  group_by(division) %>%
+  mutate(times = 1 + (date - min(date)) / ddays(), # Adding numeric times
+         Pango.lineage = as.factor(Pango.lineage)) %>%
+  ungroup()
+
+
+
+
+```
+
+
+```{r}
+
+#Setting workflow for tidymodels
+
+multinomial_recipe = recipe(Pango.lineage ~ times, data = long_df) %>%
+    step_normalize(all_predictors()) #normalize standard dev and mean
+
+multinomial_prep = prep(multinomial_recipe)
+
+
+#
+multinomial_spec = multinom_reg() %>%
+  set_engine("nnet") #setting nnet package for multinom reg fit
+
+
+multinomial_wf = workflow() %>%
+  add_recipe(multinomial_recipe) %>%
+  add_model(multinomial_spec)
+
+
+
+
+
+
+
+```
+
+#automating the workflow for all lineages and divisions
+
+```{r}
+
+state_data <- long_df %>%
+  filter(division == "Michigan")
+
+model_results <- fit(multinomial_wf, state_data)
+
+times <- seq(min(state_data$times), max(state_data$times))
+date <- times + min(state_data$date) - 1
+times_to_predict <- data.frame(times = times, date = date)
+pred_df <- cbind(times_to_predict, predict(model_results, times_to_predict, type = "prob")) %>%
+  distinct(date, .keep_all = TRUE) %>%
+  pivot_longer(starts_with(".pred"), names_to = "pango_lineage", values_to = "pred_freq") %>%
+  mutate(pango_lineage = str_replace(pango_lineage,"^.pred_",""))
+pred_df
+
+
+
+
+
+```
+
+```{r}
+
+#fit the data to the multinom workflow
+fit_single_workflow = function(wf, data){
+  # Fitting Single Model
+  model_results = fit(wf, data)
+}
+
+#get prediction
+get_single_preds = function(model, data){
+  # Make sure all dates in range have predictions
+  times <- seq(min(data$times), max(data$times))
+  date <- times + min(data$date) - 1
+  
+  times_to_predict = data.frame(times = times, date = date)
+  
+  cbind(times_to_predict, predict(model, times_to_predict, type = "prob")) %>% # Combine data and model
+    distinct(date, .keep_all = TRUE) %>% # Reduce to values by time
+    pivot_longer(starts_with(".pred"), names_to = "Pango.lineage", values_to = "pred_freq") %>% # Pivot to tidy format
+    mutate(Pango.lineage = str_replace(Pango.lineage,"^.pred_","")) # Fix pango_lineage
+}
+
+#running the model on the nested data
+
+model_results_nest = long_df %>% 
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  nest(-division) %>% 
+  mutate(model = map(data, ~ fit_single_workflow(multinomial_wf, .)),
+         model_pred = map2(model, data, ~ get_single_preds(.x, .y)))
+
+
+
+#Unnesting
+model_results = model_results_nest %>%
+  select(division, model_pred) %>%
+  unnest(model_pred)
+
+
+
+
+
+```
+
+#merging the dataset with mlr data
+
+```{r}
+
+final_mlr = left_join(model_results, clean_df) %>%
+ mutate(n = replace_na(n, 0),
+      freq = replace_na(freq, 0))  %>%
+  group_by(date, division) %>%
+  mutate(sequence_total = sum(n)) %>%
+  ungroup()
+
+
+
+
+```
+
+#Plotting pred freqs
+```{r}
+
+final_mlr %>%
+  ggplot(aes(x= date,y = pred_freq,  fill = division)) + 
+  geom_area() + 
+  ylab("Predicted frequencies") +
+  theme_classic() +
+  facet_wrap(~Pango.lineage) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank())
+
+
+final_mlr %>%
+  ggplot(aes(x= date,y = pred_freq,  fill = Pango.lineage)) + 
+  geom_area() + 
+  ylab("Predicted frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+
+
+
+
+```
+
+
+# Joining CDC dataset
+```{r}
+
+cdc_raw = read.csv("https://data.cdc.gov/api/views/9mfq-cb36/rows.csv?accessType=DOWNLOAD")
+
+cdc_mod = cdc_raw %>% select(submission_date, state, new_case) %>% 
+  rename(date = submission_date)%>%
+  mutate(newstate = abbr2state(state)) %>% #converting state abbreviation to full name
+  select(date, newstate, new_case) %>%
+  rename(division = newstate) %>%
+  filter(!is.na(division)) %>% 
+  mutate(
+  date = as.Date(date, format("%m/%d/%Y"))) 
+
+#Joining the two dataset
+full_data = final_mlr %>% 
+  left_join(cdc_mod) %>%
+   mutate(pred_cases = pred_freq * new_case)
+
+#Exporting dataset
+write.csv(full_data, "Rt_cdc&GISAID_Jul_21.csv")
+
+
+```
+
+
+
+
