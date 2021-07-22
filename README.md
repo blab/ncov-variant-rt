@@ -52,7 +52,7 @@ Here we fit a multinomial logistic regression on SARS-CoV-2 variant frequency gr
 ## Visualizing smoothed frequencies for lineages of concern (B.1.1.7, B.1.351, P.1, B.1.427, B.1.617)
 list obtained from the cdc and can be altered according to the desired analysis, please refer to https://www.cdc.gov/coronavirus/2019-ncov/variants/variant-info.html for a complete SARS-CoV-2 Variant Classifications
 
-![Smoothed Freqs](https://user-images.githubusercontent.com/84752326/125992874-80714cb1-1c71-4c4c-bcfd-6cec3f46a305.png)
+![image (1)](https://user-images.githubusercontent.com/84752326/126689366-9e6ede20-dc2c-46a2-ab1a-9c0f055148c3.png)
 
 
 
@@ -103,9 +103,7 @@ Here we quantify transmissibility throughout an epidemic from the analysis of ti
 
 ## Visualizing Rt estimated from the EpiEstim package on a number of states 
 
-
-![EpiEstimRt](https://user-images.githubusercontent.com/84752326/125993001-55460dd1-a407-401e-a854-79bb3c32fc93.png)
-
+![image](https://user-images.githubusercontent.com/84752326/126689309-1df4a85a-07f6-4f14-ba68-eaeec985971e.png)
 
 
 
