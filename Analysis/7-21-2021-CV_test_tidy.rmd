@@ -31,15 +31,6 @@ cv_data = read.csv("CV_long_df.csv") %>%
   select(-division) %>% 
   arrange(date)
 
-cv_data_ts = read.csv("CV_MLR_rolling.csv") %>%
-  select(-X) %>%
-  filter(division == "New York") %>%
-  mutate(
-    date = as.Date(date)
-  )
-
-
-
 ```
 
 
@@ -91,7 +82,7 @@ get_single_preds = function(model, data){
 
 ts_split = sliding_period(cv_data, index = date, period = "day",
                           lookback = Inf,
-                          assess_stop = 7,
+                          assess_stop = 14,
                           skip = 2)
 
 
