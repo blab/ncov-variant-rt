@@ -28,17 +28,18 @@ library(data.table)
 
 ```{r}
 cdc_raw = read.csv("cdc-data.csv")
-covmeta_raw = read.csv("metadata-usa.csv")
+covmeta_raw = read.table("metadata_usa_new.tsv", header=TRUE, sep ="\t") %>%
+  filter(date >= ("2021-01-01"))
 ```
 
 ```{r}
 #Dataset 1
 
-init_df = covmeta_raw %>% select(date, division,pango_lineage)
+init_df = covmeta_raw %>% select(date, division,Pango.lineage)
 
 #Standardizing date
 init_df = init_df %>% mutate(
-  date = as.Date(date, format("%m/%d/%y"))
+  date = as.Date(date)
 ) 
 
 init_df
@@ -70,7 +71,7 @@ cdc_mod = cdc_mod %>% select(date, newstate, new_case) %>%
 cdc_mod = cdc_mod %>% mutate(
   date = as.Date(date, format("%m/%d/%Y"))
 ) 
-
+class(cdc_mod$date)
 view(cdc_mod)
 
 ```
@@ -86,15 +87,21 @@ init_df_new= init_df
 var_of_concern = c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617.2")
 
 #tidying and prepping the dataset
-init_df_new = init_df_new %>%
-  mutate(pango_lineage = case_when(pango_lineage %in% var_of_concern ~ pango_lineage, TRUE ~ "other")) %>%
-  count(date, pango_lineage, division)%>%
-  group_by(date, division) %>%
-  mutate(totalcount = sum(n))%>% 
+init_df_new = init_df %>%
+  mutate(Pango.lineage = case_when(Pango.lineage %in% var_of_concern ~ Pango.lineage, TRUE ~ "other")) %>%  
+   group_by(date, division) %>%
+  count(date, Pango.lineage, division)%>%
+  mutate(totalcount = sum(n, na.rm = FALSE))%>% 
   ungroup() %>% 
-  mutate(freq = n/totalcount) 
+  mutate(freq = n/totalcount) %>%
+  complete(date, Pango.lineage, division,
+             fill = list(N = 0, freq = 0)) 
+%>%
+ mutate(n = replace_na(n, 0),
+      freq = replace_na(freq, 0),
+        totalcount = replace_na(totalcount, 0))
 
-init_df_new 
+init_df_new
 ```
 
 
@@ -104,9 +111,10 @@ init_df_new
 ```{r}
 
 
-initial_mod = init_df_new %>% left_join(cdc_mod) 
+initial_mod = init_df_new %>% left_join(cdc_mod) %>% filter(!is.na(new_case))
+  
 
-initial_mod
+view(initial_mod)
 
 write.csv(initial_mod, "Rt_cdc&GISAID.csv")
 
