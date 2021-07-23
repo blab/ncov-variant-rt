@@ -1,0 +1,228 @@
+---
+title: "CV_test_tidy.rmd"
+author: "Eslam Abousamra"
+date: "7/21/2021"
+output: html_document
+---
+```{r}
+library(forecast)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+library(rsample)
+library(greybox)
+library(caret)
+library(yardstick)
+```
+
+
+
+
+
+
+```{r}
+
+cv_data = read.csv("CV_long_df.csv") %>%
+  select(-X) %>%
+    mutate(date = as.Date(date)) %>%
+  filter(division == "New York") %>%
+  select(-division) %>% 
+  arrange(date)
+
+cv_data_ts = read.csv("CV_MLR_rolling.csv") %>%
+  select(-X) %>%
+  filter(division == "New York") %>%
+  mutate(
+    date = as.Date(date)
+  )
+
+
+
+```
+
+
+#Setting up the workflow
+```{r}
+
+
+multinomial_recipe = recipe(Pango.lineage ~ times, data = cv_data) %>%
+    step_normalize(all_predictors()) #normalize standard dev and mean
+
+multinomial_prep = prep(multinomial_recipe)
+
+
+#
+multinomial_spec = multinom_reg() %>%
+  set_engine("nnet") #setting nnet package for multinom reg fit
+
+
+multinomial_wf = workflow() %>%
+  add_recipe(multinomial_recipe) %>%
+  add_model(multinomial_spec)
+
+
+#fit the data to the multinom workflow
+fit_single_workflow = function(wf, data){
+  # Fitting Single Model
+  model_results = fit(wf, data)
+}
+
+#get prediction
+get_single_preds = function(model, data){
+  # Make sure all dates in range have predictions
+  times <- seq(min(data$times), max(data$times))
+  date <- times + min(data$date) - 1
+  
+  times_to_predict = data.frame(times = times, date = date)
+  
+  cbind(times_to_predict, predict(model, times_to_predict, type = "prob")) %>% # Combine data and model
+    distinct(date, .keep_all = TRUE) %>% # Reduce to values by time
+    pivot_longer(starts_with(".pred"), names_to = "Pango.lineage", values_to = "pred_freq") %>% # Pivot to tidy format
+    mutate(Pango.lineage = str_replace(Pango.lineage,"^.pred_","")) # Fix pango_lineage
+}
+
+```
+
+
+```{r}
+#Spliting data on a sliding period
+
+ts_split = sliding_period(cv_data, index = date, period = "day",
+                          lookback = Inf,
+                          assess_stop = 7,
+                          skip = 2)
+
+
+
+
+#Fit the splits and extract metrics
+
+metrics = metric_set(mn_log_loss)
+
+#Fitting the model
+fold_test = multinomial_wf %>% 
+  fit_resamples(ts_split, metrics = metrics, control = control_resamples(save_pred = TRUE))
+  
+
+
+#extracting metrics from the model
+get_metric = function(split, predictions) {
+  assessment = assessment(split)
+  #Obt freqs
+  assessment_freq = assessment %>%
+    count(date, Pango.lineage) %>%
+    group_by(date) %>%
+    mutate(
+    freq = n/sum(n)) %>%
+    ungroup()
+  #Getting predictions
+  prediction = predictions %>%
+  cbind(times = assessment$times,
+        date = assessment$date) %>%
+  distinct(times, .keep_all = TRUE) %>% 
+  select(-Pango.lineage, -.row, -.config) %>%
+  pivot_longer(starts_with(".pred_"), names_to = "Pango.lineage", values_to = "pred_freq") %>%
+  mutate(Pango.lineage = str_replace(Pango.lineage,"^.pred_",""))
+  #Joining test and train
+  full_assessment = assessment_freq %>%
+  left_join(prediction) %>% 
+    replace_na(list(pred_freq = 0)) 
+  #metrics
+  full_assessment_summary = rmse(data= full_assessment, truth = freq, 
+                           estimate = pred_freq)
+  return(full_assessment_summary)
+}
+
+#extracting metric output
+metric_output = fold_test %>%
+  mutate(
+    summary = map2(.x = splits, .y = .predictions, ~get_metric(.x, .y))
+  ) 
+
+
+
+head(metric_output)
+
+analysis(metric_output$splits[[1]])
+
+```
+
+
+```{r}
+
+#Setting the variants appearance dates to variables
+var_app = cv_data %>%
+  group_by(Pango.lineage) %>%
+  summarize(first_day = min(date))
+#
+var_diss = cv_data %>%
+  group_by(Pango.lineage) %>%
+  summarize(last_day = max(date))
+
+
+#obtaining dates for variants appearance
+get_f_data_set <- function(data, g){
+  sum_data = data %>% summarize(g(date))
+  sum_data[1,1]
+}
+
+
+#getting the output of the dates and merging them to the summarized metrics
+metric_new = metric_output %>% 
+  mutate(min_assess = map_dbl(splits, ~get_f_data_set(assessment(.), min)) %>%
+           as_date(),
+         
+         max_assess = map_dbl(splits, ~get_f_data_set(assessment(.), max))%>%
+           as_date() ,
+         min_analysis = map_dbl(splits, ~get_f_data_set(analysis(.), min))%>%
+           as_date(),
+         max_analysis = map_dbl(splits, ~get_f_data_set(analysis(.), max))%>%
+           as_date())
+
+
+#Extracting the rsme values for plotting
+
+extract_summary_metrics <- function(output){
+   .estimate = output %>% 
+      select(id, summary, min_assess, max_assess, min_analysis, max_analysis) %>%
+    unnest(summary)
+   return(.estimate)
+}
+
+#extracting the summaries and the dates of variants
+summarydata = extract_summary_metrics(metric_new)
+
+
+
+```
+
+#Plotting rolling cross-validation data and visualizing the rmse values
+
+```{r}
+summarydata %>% 
+  ggplot(aes(x = min_assess, y = .estimate)) +
+  geom_point(alpha = 1, shape = 19, color = "#0072B2", size = 1) +
+  geom_vline(data = var_app, aes(xintercept = first_day, color = Pango.lineage), linetype= "dashed") +
+    geom_vline(data = var_diss, aes(xintercept = last_day, color = Pango.lineage), linetype= "dashed") +
+  theme_classic() +
+  ylab("RSME estimates") +
+  xlab("Test (Assessment) Predictions date") +
+  ggtitle("New York State") +
+  theme(
+    aspect.ratio = 0.65)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
