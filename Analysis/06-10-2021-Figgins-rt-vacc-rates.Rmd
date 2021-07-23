@@ -1,0 +1,282 @@
+---
+title: "Fitting vaccination effects on effective reproductive number for SARS-CoV-2 in the United States using linear mixed models"
+author: "Marlin Figgins"
+date: "6/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+# Read in estimated effective reproductive numbers by lineage
+df <- read_tsv("~/Documents/rt_from_lineage_frequencies/data/inferred_lineage_rts_06_29_2021.tsv")
+```
+```{r}
+df %>%
+  count(date)
+```
+
+```{r}
+df %>%
+  filter(state == "Washington") %>%
+  ggplot(aes(x=date, y = rt_median)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_ribbon(aes(ymin = rt_lower_80, ymax = rt_upper_80), fill = "pink") +
+  geom_line() +
+  facet_wrap( ~lineage)
+```
+
+
+```{r}
+df %>%
+  filter(lineage == "B.1.617.2") %>%
+  ggplot(aes(x=date, y = rt_median)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_ribbon(aes(ymin = rt_lower_50, ymax = rt_upper_50), fill = "purple1") +
+  geom_line() +
+  facet_wrap( ~ state)
+```
+
+
+```{r}
+df %>%
+  filter(lineage == "P.1") %>%
+  ggplot(aes(x=date, y = rt_median)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_ribbon(aes(ymin = rt_lower_80, ymax = rt_upper_80), fill = "lightcoral") +
+  geom_line() +
+  facet_wrap( ~ state)
+```
+
+
+
+```{r}
+df %>%
+  ggplot(aes(x=date, y = rt_median, id = state)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_line(alpha = 0.8, aes(color = lineage)) +
+  scale_y_continuous(limits = c(0.5, 2.3)) + 
+  facet_wrap( ~ lineage) +
+    theme(legend.position = "none", 
+        axis.title.x=element_blank(),
+        panel.background = element_rect(fill = "white", colour = "grey50"))
+```
+
+
+```{r, fig.height=5, fig.width=7}
+df %>%
+  filter(date == as.Date("2021-06-11"))%>%
+  ggplot(aes(x=state, y = rt_median, color = lineage)) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_errorbar(aes(ymin = rt_lower_80, ymax = rt_upper_80), color = "black", width = 0.2) +
+  geom_point(size = 3.5) + 
+  facet_wrap( ~ lineage) +
+  theme(legend.position = "none", 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        panel.background = element_rect(fill = "white", colour = "grey50"))
+```
+
+
+## R v.s. Vaccination Rates
+
+```{r}
+# Read in CDC vaccination date
+vacc <- read.csv("~/Documents/rt_from_lineage_frequencies/data/raw/COVID-19_Vaccinations_in_the_United_States_Jurisdiction.csv") %>%
+  select(Date, Location, 
+         Administered_Dose1_Pop_Pct, Series_Complete_Pop_Pct, 
+         Administered_Dose1_Recip_18PlusPop_Pct, Series_Complete_18PlusPop_Pct, 
+         Administered_Dose1_Recip_65PlusPop_Pct, Series_Complete_65PlusPop_Pct) %>%
+  rename(state = Location, date = Date) %>%
+  mutate(state = state.name[match(state, state.abb)],
+         date = as.Date(date, format = "%m/%d/%Y"),
+         date = date + 14) %>% # lag vaccination precentages by two weeks %>%
+  mutate(second_dose_gap = (Administered_Dose1_Pop_Pct - Series_Complete_Pop_Pct) ) %>%
+  filter(!is.na(state))
+```
+
+
+```{r}
+relative_rt <-df %>%
+  group_by(state) %>%
+  mutate(relative_rt = rt_median / rt_median[lineage == 'other'])
+```
+
+```{r}
+rt_vacc <- relative_rt %>% left_join(vacc)
+```
+
+```{r}
+rt_vacc %>%
+  filter(lineage == "other") %>%
+  ggplot( aes(x = date)) +
+  geom_point(aes(y = Administered_Dose1_Recip_65PlusPop_Pct, color = state))
+```
+
+```{r, fig.height=5, fig.width=7}
+# Need some measure of natural immunity to see if there's any consistency in where the drop is occurring
+vacc.v.relative.rt.states <- rt_vacc %>%
+  filter(Series_Complete_Pop_Pct > 0) %>%
+  filter(lineage != "other") %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = relative_rt, color = lineage)) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_point(size = 0.5) + 
+  #geom_smooth(method = "loess") +
+  facet_wrap(~ state) +
+  xlab("Percentage of Population fully vaccinated (lagged 2 weeks)") +
+  ylab("Relative Reproductive Number")
+
+ggsave("../figs/vaxx-percentage-v-r-states.png", plot = vacc.v.relative.rt.states)
+
+vacc.v.relative.rt.states
+```
+
+
+```{r}
+library(ggpmisc)
+
+vacc.v.relative.rt <- rt_vacc %>%
+  filter(Series_Complete_Pop_Pct > 0) %>%
+  filter(lineage != "other") %>%
+  filter(date== as.Date("2021-06-11")) %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = relative_rt)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  stat_poly_eq(formula = y ~ x, 
+               aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  facet_wrap(~ lineage) +
+  xlab("Percentage of Population fully vaccinated (lagged 2 weeks)") +
+  ylab("Relative Reproductive Number") +
+  ggtitle(label = "Using estimates for 06-11-2021")
+
+ggsave("../figs/lm-06-11-2021-vaxx-percentage-v-r.png", plot = vacc.v.relative.rt)
+vacc.v.relative.rt
+``` 
+
+```{r}
+
+rt_vacc %>%
+  filter(Administered_Dose1_Pop_Pct > 0) %>%
+  filter(lineage != "other") %>%
+  #filter(date== as.Date("2021-06-11")) %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = rt_median, color = lineage)) +
+  geom_point() + 
+  facet_wrap(~ state) +
+  xlab("Percentage of Population at least one dose (lagged 2 weeks)") +
+  ylab("Relative Reproductive Number") +
+  ggtitle(label = "Using estimates for 06-11-2021")
+```
+
+```{r}
+
+rt_vacc %>%
+  filter(Administered_Dose1_Pop_Pct > 0) %>%
+  filter(lineage != "other") %>%
+  #filter(date== as.Date("2021-06-11")) %>%
+  ggplot(aes(x = Administered_Dose1_Pop_Pct, y = rt_median, color = lineage)) +
+  geom_point() + 
+  xlab("Percentage of Population at least one dose (lagged 2 weeks)") +
+  ylab("Relative Reproductive Number") +
+  ggtitle(label = "Using estimates for 06-11-2021") +
+  facet_wrap(~state)
+```
+
+
+
+```{r}
+library(lme4)
+rt_vacc <- rt_vacc %>% filter(Series_Complete_Pop_Pct > 0)
+rt_vacc$lineage <- relevel(as.factor(rt_vacc$lineage), ref = "other")
+rt_vacc$state <- as.factor(rt_vacc$state) 
+
+# We fit a linear mixed model with fixed vaccination effect as well as random effects with lineage and state
+# For each lineage, we predict a random slope and intercept and for each state the same
+mixed.lmer <- lmer(rt_median ~  Series_Complete_Pop_Pct + (1 + Series_Complete_Pop_Pct|lineage) + (1+Series_Complete_Pop_Pct|state), data = rt_vacc, REML = FALSE, lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
+```
+
+```{r}
+library(ggeffects)
+ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "lineage"), type = "re")  %>%
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +
+  facet_wrap( ~group) +
+  xlab("Vaccination Rate") +
+  ylab("R")
+```
+
+```{r}
+ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "state"), type = "re")  %>%
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +
+  facet_wrap( ~group) +
+  xlab("Vaccination Rate") +
+  ylab("R")
+```
+
+```{r}
+cbind(rt_vacc, pred = predict(mixed.lmer)) %>%
+  filter(state %in% c("Virginia", "Texas", "Missouri", "Michigan", "Washington", "Maryland")) %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = rt_median, color = lineage)) +
+  facet_wrap(~state) +
+  geom_point(alpha = 0.5) +
+  geom_line(aes(y = pred), size = 1) 
+```
+
+```{r}
+# Combine predictions
+cbind(rt_vacc, pred = predict(mixed.lmer))
+
+# What would R be if we continued vaccinating up to 70%, 80%, 90%?
+
+data_to_predict <- crossing(state = c("Virginia", "Texas", "Missouri", "Michigan", "Washington", "Maryland"),
+         Series_Complete_Pop_Pct = seq(from = 0.0, to = 90, by = 10),
+         lineage = c("B.1.1.7", "P.1", "B.1.617.2"))
+
+cbind(data_to_predict,predicted_Rt = predict(mixed.lmer, newdata = data_to_predict )) %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = predicted_Rt, color = lineage)) +
+  facet_wrap(~state) +
+  geom_line( size = 1) +
+  geom_hline(yintercept = 1,  linetype="dashed") 
+```
+
+
+```{r}
+library("broom.mixed")
+
+# Really, we want to plot the fixed plus the random effects to get the overal slope in different regions
+random.effects <- ranef(mixed.lmer)
+re.df <- tibble::rownames_to_column(bind_rows(random.effects$state, random.effects$lineage), "level")
+re.df <- re.df %>%
+  pivot_longer(!level, names_to = "term", values_to = "estimate")
+```
+
+```{r}
+re.df %>%
+  ggplot(aes(x = level, y = estimate)) +
+  geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
+  geom_point() +
+  coord_flip() +
+  facet_wrap(~term, scale = "free_x")
+```
+
+
+```{r}
+re.df <- tidy(mixed.lmer, effects = c("ran_vals"), conf.int = TRUE)
+re.df %>%
+  filter(group == "lineage") %>%
+  ggplot(aes(x = level, y = estimate)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
+  geom_point() +
+  coord_flip() +
+  facet_grid(~term, scale = "free_x")
+
+```
