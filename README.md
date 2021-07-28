@@ -2,7 +2,7 @@
 ## About
 Analysis of state-by-variant Rt estimates using CDC and GISAID data
 
-Eslam Abousamra, John Huddleston, Marlin Figgins
+Eslam Abousamra, Marlin Figgins, John Huddleston 
 
 This project involves a demonstration to build out a framework to perform comparative measurements of the effective reproductive number (Rt) using bayesian inference methods of estimation, mostly involving Rstudio epidemiological tool packages which include EpiEstim (Cori A. et al., 2013), EpiNow (Abbott S. et al., 2020)
 
