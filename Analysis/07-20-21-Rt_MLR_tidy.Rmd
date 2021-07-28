@@ -85,13 +85,12 @@ long_df <- long_df %>%
 
 #Setting workflow for tidymodels
 
-multinomial_recipe = recipe(Pango.lineage ~ times, data = long_df) %>%
+multinomial_recipe = recipe(Pango.lineage ~ times, data = long_df) %>% 
     step_normalize(all_predictors()) #normalize standard dev and mean
 
 multinomial_prep = prep(multinomial_recipe)
 
 
-#
 multinomial_spec = multinom_reg() %>%
   set_engine("nnet") #setting nnet package for multinom reg fit
 
