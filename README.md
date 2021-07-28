@@ -14,6 +14,8 @@ The SARS-CoV-2 genome data were obtained from the GISAID Initiative, please refe
 
 ![Image 7-28-21 at 12 55 PM](https://user-images.githubusercontent.com/84752326/127387246-86b53335-837a-4240-aa14-aaba9ee0a62c.jpg)
 
+### Sanitize metadata using Nextstrain platform
+Please refer to https://docs.nextstrain.org/en/latest/tutorials/SARS-CoV-2/steps/data-prep.html to filter and sanitize metadata to fit the notebook
 
 The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to https://data.cdc.gov for more information.
 
