@@ -4,13 +4,16 @@ Analysis of state-by-variant Rt estimates using CDC and GISAID data
 
 Eslam Abousamra, Marlin Figgins, John Huddleston 
 
-This project involves a demonstration to build out a framework to perform comparative measurements of the effective reproductive number (Rt) using bayesian inference methods of estimation, mostly involving Rstudio epidemiological tool packages which include EpiEstim (Cori A. et al., 2013), EpiNow (Abbott S. et al., 2020)
+This project involves a demonstration to build out a framework to perform measurements of the effective reproductive number (Rt) using bayesian inference methods of estimation, mostly involving Rstudio epidemiological tool packages which include EpiEstim (Cori A. et al., 2013), EpiNow (Abbott S. et al., 2020). In addition to questioning the effect of interventions such as vaccination and address prediction limitations and biases.
 
 # Tidying Data
 
 ## Initial datasets
 
 The SARS-CoV-2 genome data were obtained from the GISAID Initiative, please refer to https://www.gisaid.org for more information. To get access to the metadata dataset, register for a free GISAID account.
+
+![Image 7-28-21 at 12 55 PM](https://user-images.githubusercontent.com/84752326/127387246-86b53335-837a-4240-aa14-aaba9ee0a62c.jpg)
+
 
 The SARS-CoV-2 daily case counts were obtained from the CDC, please refer to https://data.cdc.gov for more information.
 
