@@ -1,0 +1,189 @@
+---
+title: "Rt_vaccination_est.rmd"
+author: "Eslam Abousamra"
+date: "7/16/2021"
+output: html_document
+---
+
+
+```{r}
+
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(EpiEstim)
+library(devtools)
+library(openintro)
+
+```
+
+#Sort vaccination, Rt value dataset
+
+```{r}
+
+#Read and format rt output data
+rt_data = read.csv("Rt_EpiEstim_est.csv") %>%
+  select(-X) %>% 
+  rename(Date = dates) %>%
+  mutate(Date = as.Date(Date)) %>%
+  na.omit()
+
+#Read and format vaccination data
+#Select relevant columns
+vac_data= read.csv("COVID-19_Vaccinations_in_the_United_States_Jurisdiction-2.csv") %>% 
+  select(Date, Location, 
+         Administered_Dose1_Pop_Pct, Series_Complete_Pop_Pct, 
+         Administered_Dose1_Recip_18PlusPop_Pct, Series_Complete_18PlusPop_Pct, 
+         Administered_Dose1_Recip_65PlusPop_Pct, Series_Complete_65PlusPop_Pct) %>%
+  mutate(Location = abbr2state(Location)) %>%
+  rename(division = Location) %>%
+  mutate(Date = as.Date(Date, format="%m/%d/%Y")) %>%
+  na.omit()
+
+
+#Joining datasets by division and date
+full_data = rt_data %>% 
+  left_join(vac_data) %>%
+  mutate(
+    Date = Date + 14
+  )
+
+full_data
+
+
+
+
+```
+
+
+
+#Plotting
+```{r}
+
+
+#Rt per state
+plot1 = ggplot(full_data, aes(x = Series_Complete_Pop_Pct, y = meanR, colour =pango_lineage)) +
+  ylab("Rt") +
+  xlab("Total Pop Vaccination percentage (Lagged 2 weeks)") +
+  facet_wrap(vars(division)) +
+  geom_smooth(se = FALSE) + 
+  geom_hline(yintercept=1, linetype=3, col = 'darkslategrey', size= 0.7) +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        strip.background =element_blank(),
+        aspect.ratio = 0.65)+
+  ylim(NA,2)
+
+plot1
+
+#
+plot4 = ggplot(full_data, aes(x = Series_Complete_Pop_Pct, y = meanR, colour =division)) +
+  ylab("Rt") +
+  xlab("Total Population Vaccination percentage (Lagged 2 weeks)") +
+  facet_wrap(vars(pango_lineage)) +
+  geom_smooth(se = FALSE) + 
+  geom_hline(yintercept=1, linetype=3, col = 'darkslategrey', size= 0.7) +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        aspect.ratio=-.65,
+        strip.background =element_blank()) +
+  ylim(NA,2)
+plot4
+
+
+
+#### Series vacc w lineages
+ggplot(full_data, aes(x = Series_Complete_Pop_Pct)) +
+  ylab("Rt") +
+  xlab("Total Pop Vaccination percentage") +
+  facet_wrap(vars(pango_lineage)) +
+  #geom_smooth(aes(y = meanR, colour =division), se = F) + 
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = division), alpha = 0.3) +
+  geom_hline(yintercept=1, linetype=3, col = 'darkslategrey', size= 0.7) +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        aspect.ratio=-.65,
+        strip.background =element_blank()) +
+  ylim(NA,2)
+
+
+
+head(full_data)
+
+
+#####
+#Specific date
+m = full_data %>% filter(Date == "2021-07-14")
+
+library(ggpmisc)
+
+vacc_state2 = ggplot(m, aes(x = Series_Complete_Pop_Pct, y = medianR)) +
+  ylab("Median Reproduction Number") +
+  geom_point(aes(colour = pango_lineage), size = 3)+
+  xlab("Total Pop Vaccination percentage (Lagged 2 weeks)") +
+  facet_wrap(vars(pango_lineage)) +
+    scale_fill_viridis(discrete = TRUE, option = "D") +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  geom_hline(yintercept=1, linetype=3, col = 'darkslategrey', size= 0.7) +
+  theme_classic() +
+    geom_smooth(method = "lm") +
+  stat_poly_eq(formula = y ~ x, 
+               aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        strip.background =element_blank()) +
+  ylim(NA,2) +
+  labs(title = "2021-07-14: Nationwide immunity response to variants") 
+vacc_state2
+
+ggsave("../vacc_perstate_07-14.png", plot = vacc_state2)
+
+ggsave("../vacc_state.png", plot = vacc_state2, width = 2000,
+  height = 1700, units= ("px"))
+
+
+
+
+vacc_state = ggplot(m, aes(x = Series_Complete_Pop_Pct, y = meanR)) +
+  ylab("Rt") +
+  geom_point(aes(colour = division), size = 3)+
+  xlab("Total Pop Vaccination percentage (Lagged 2 weeks)") +
+  facet_grid(vars(pango_lineage)) +
+  #geom_smooth(se = FALSE) + 
+  geom_hline(yintercept=1, linetype=3, col = 'darkslategrey', size= 0.7) +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        strip.background =element_blank())+
+  ylim(NA,1.5) +
+  labs(title = "2021-07-14")
+vacc_state
+
+
+
+ggsave("../vacc_perstate_06-30.png", plot = vacc_state)
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
