@@ -32,7 +32,7 @@ tidy_dataset = read.csv("Rt_cdc&GISAID.csv") %>%
 # Wide dataset (resorting lineages) to pass in multinomial regression model
 tidy_wider = tidy_dataset %>%
   rename(sequences = n) %>%
-  pivot_wider(names_from = pango_lineage, values_from = c(sequences, freq), values_fill = 0) 
+  pivot_wider(names_from = Pango.lineage, values_from = c(sequences, freq), values_fill = 0) 
 
 tidy_wider
 
@@ -71,15 +71,33 @@ get_division_times <- function(tbl){
 
 
 #Fitting the multinomial frame
+valid.divisions <- tidy_dataset %>%
+   count(division, Pango.lineage) %>%
+   select(-n) %>%
+   count(division) %>%
+   filter(n > 1) %>% # Get Divisions with more than one of the following variants
+   pull(division)
+
+
+
+tidy_dataset = tidy_dataset %>% filter(division %in% valid.divisions) %>%
+    group_by(division) %>%
+    mutate(times = yday(date), # Adding numeric times
+           Pango.lineage = as.factor(Pango.lineage)) %>%
+  ungroup()
+
+
+
 
 
 multinomial_frame <- tidy_wider %>%
   select(date, division, starts_with("sequences")) %>%
   nest(-division) %>%
+   #filter(n > 0) %>%
 # Nest by division
   mutate(division_mat = map(data, ~get_division_mat(.)), # Get counts 
          division_times = map(data, ~get_division_times(.)), # Get times
-         model = map2(.x = division_mat, .y = division_times, ~multinom(.x ~ .y, trace = FALSE, MaxNWts = 100000)),
+         model = map2(.x = division_mat, .y = division_times, ~multinom(.x ~ .y, trace = TRUE, MaxNWts = 100000, na.action(n))),
          predictions = map(model, ~ predict(., type = "prob")),  # Get predictions
          data = map2(.x = data, .y = predictions, ~ cbind(.x, .y))) %>% 
   # Augment original data with predictions
@@ -112,7 +130,6 @@ multinomial_frame
 ```{r}
 
 
-
 #Final dataset with multinomial regression
 #Rt Estimation dataset
 
@@ -122,9 +139,10 @@ final_mod = tidy_dataset %>%
 
 
 
-final_mod
+View(final_mod)
 
 #save file as an excel sheet
+
 write.csv(final_mod, "Rt_MLR_cdc&GISAID.csv")
 
 
