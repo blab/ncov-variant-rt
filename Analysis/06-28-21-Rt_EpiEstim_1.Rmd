@@ -59,7 +59,7 @@ plot1 = full_data %>%
 plot1
 
 plot1_2 = full_data %>%
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  #filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
   ggplot(aes(x= as.Date(date),y = pred_freq,  fill = pango_lineage)) + 
   geom_area() + 
   ylab("Predicted frequencies") +
@@ -144,7 +144,6 @@ plot2 = full_data %>%
 #Customizing variables to pass in the EpiEstim Package
 Rt_data = full_data %>% 
   select(date, pango_lineage, division, pred_cases) %>% 
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
   rename(I = pred_cases) %>% 
   rename(dates = date) %>% 
   mutate(dates = as.Date(dates)) %>%
@@ -174,9 +173,11 @@ process_rt = function(x){
   mean_posterior = x$R[, "Mean(R)"]
   quantile_0.025_posterior <- x$R[, "Quantile.0.025(R)"]
   quantile_0.975_posterior <- x$R[, "Quantile.0.975(R)"]
+  median_posterior = x$R[, "Median(R)"]
   return(data.frame(
     dates = dates[t_end],
     meanR = mean_posterior,
+    medianR =median_posterior,
     lower = quantile_0.025_posterior,
     upper = quantile_0.975_posterior))
 }
@@ -202,10 +203,12 @@ write.csv(Rt_output, "Rt_EpiEstim_est.csv")
 # Visualization
 ```{r}
 #Plotting Rt
+filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) 
 
-
-ggplot(Rt_output, aes(x = dates, y = meanR)) +
-  ylab("Relative Rt") +
+Rt_output %>%
+  filter(division %in% c("Washington", "New York", "Texas")) %>%
+ggplot( aes(x = dates, y = meanR)) +
+  ylab("Mean Rt") +
   facet_wrap(vars(division)) +
   geom_line(aes(colour =pango_lineage)) +
   #geom_smooth(se = FALSE) + 
@@ -215,19 +218,75 @@ ggplot(Rt_output, aes(x = dates, y = meanR)) +
   theme(legend.title = element_blank(),
         axis.title.x=element_blank(),
         strip.background =element_blank(),
-        aspect.ratio = 0.65) +
-  ylim(NA,2)
+        aspect.ratio = 0.65)+
+  ylim(NA,10)
+Rt_output 
 
 
+head(Rt_output)
+Rt_output %>%
+ mutate(upper = max(1:2, upper))
+
+#Renaming lineages to greek letters
+Rt_output$pango_lineage = gsub("B.1.1.7","Alpha",Rt_output$pango_lineage)
+Rt_output$pango_lineage = gsub("P.1","Gamma",Rt_output$pango_lineage)
+Rt_output$pango_lineage = gsub("B.1.351","Beta",Rt_output$pango_lineage)
+Rt_output$pango_lineage = gsub("B.1.526","Iota",Rt_output$pango_lineage)
+Rt_output$pango_lineage = gsub("B.1.617.2","Delta",Rt_output$pango_lineage)
+
+
+
+head(Rt_output)
+
+#vof = c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617.2") 
+epie_rt = Rt_output %>%
+  filter(division %in%c("Washington", "New York", "Texas"))  %>%
+  filter(upper <2) %>%
+ggplot(aes(x = dates, y = medianR)) +
+  ylab("Median Rt") +
+  facet_wrap(vars(division)) +
+
+  geom_line(aes(color =pango_lineage), size = 1.5) +
+  scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+       scale_color_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+  #geom_smooth(se = FALSE) + 
+  geom_hline(yintercept=1, linetype=4, col = 'darkslategrey', size= 1) +
+  theme_classic() +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = pango_lineage), alpha = 0.17)+ 
+  theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank(),
+        strip.text = element_text(size=15)) +
+coord_cartesian(ylim = c(NA,2), clip = "on")
+
+epie_rt
+
+
+
+ggsave("../epiestim_r.png", plot = epie_rt,width = 3000,
+  height = 1200, units= ("px"))
 
 
 
 ```
 
 
+#Arranged plots
+
+```{r}
+
+ggarrange(counts_plot, NULL, pred_freq, Observed_freqs , 
+          ncol = 2, nrow = 2,  align = "hv", 
+          widths = c(2, 1), heights = c(1, 2),
+          common.legend = TRUE)
 
 
 
 
+
+```
 
 
