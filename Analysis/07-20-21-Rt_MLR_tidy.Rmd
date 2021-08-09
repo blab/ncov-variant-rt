@@ -13,6 +13,9 @@ library(ggplot2)
 library(tidyverse)
 library(lubridate)
 library(tidymodels)
+library(rsample)
+library(openintro)
+
 ```
 
 #reading tidy data
@@ -38,7 +41,6 @@ long_df = cov_raw %>%
   mutate(Pango.lineage = case_when(Pango.lineage %in% vof ~ Pango.lineage,
                                    TRUE ~ "other")) 
   
-
 #selecting variants of interest
                                    
 clean_df = long_df %>%
@@ -48,7 +50,22 @@ clean_df = long_df %>%
   ungroup() %>%
   mutate(freq = n / sequence_total) # Compute total frequency of lineage for each day and division
 
+#Visualizing counts
+counts_plot = clean_df %>%
+  filter(division %in% c("Washington", "New York", "Texas", "Connecticut", "Illinois", "Michigan")) %>%
+ggplot(aes(x = date, fill = Pango.lineage)) +
+  geom_area(aes(y=n)) +
+        #geom_line(aes(y = n)) +
+  facet_wrap(~division) +
+  theme_classic() +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylab("Counts")
+counts_plot
 
+ggsave("../counts_vis.png", plot = counts_plot)
 
 
 
@@ -76,6 +93,7 @@ long_df <- long_df %>%
   ungroup()
 
 
+write.csv(long_df, "CV_long_df.csv")
 
 
 ```
@@ -156,7 +174,7 @@ get_single_preds = function(model, data){
 #running the model on the nested data
 
 model_results_nest = long_df %>% 
-  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  filter(division %in% c("Washington", "New York", "Texas")) %>%
   nest(-division) %>% 
   mutate(model = map(data, ~ fit_single_workflow(multinomial_wf, .)),
          model_pred = map2(model, data, ~ get_single_preds(.x, .y)))
@@ -187,36 +205,8 @@ final_mlr = left_join(model_results, clean_df) %>%
 
 
 
-
 ```
 
-#Plotting pred freqs
-```{r}
-
-final_mlr %>%
-  ggplot(aes(x= date,y = pred_freq,  fill = division)) + 
-  geom_area() + 
-  ylab("Predicted frequencies") +
-  theme_classic() +
-  facet_wrap(~Pango.lineage) +
-  theme(legend.title = element_blank(),
-        axis.title.x=element_blank())
-
-
-final_mlr %>%
-  ggplot(aes(x= date,y = pred_freq,  fill = Pango.lineage)) + 
-  geom_area() + 
-  ylab("Predicted frequencies") +
-  theme_classic() +
-  facet_wrap(~division) +
-  theme(legend.title = element_blank(),
-        axis.title.x=element_blank(),
-        strip.background =element_blank())
-
-
-
-
-```
 
 
 # Joining CDC dataset
@@ -233,17 +223,464 @@ cdc_mod = cdc_raw %>% select(submission_date, state, new_case) %>%
   mutate(
   date = as.Date(date, format("%m/%d/%Y"))) 
 
-#Joining the two dataset
+#Joining
 full_data = final_mlr %>% 
   left_join(cdc_mod) %>%
-   mutate(pred_cases = pred_freq * new_case)
+  na.omit()
+
+
+
+full_data = full_data %>% 
+  nest(-division) %>%
+  mutate(
+    m = map(data, loess, 
+            formula = new_case ~ times, span= .25),
+    smoothed_cases = map(m, `[[`, "fitted")) %>% 
+  select(-m) %>%
+  unnest() %>%
+  mutate(pred_cases = pred_freq * smoothed_cases)
+
+
+```
+
+
+```{r}
+
+ggplot(full_data, aes(x = date, color = Pango.lineage)) +
+        geom_line(aes(y = pred_cases)) +
+  facet_wrap(~division)
+
+ggplot(full_data, aes(x=date, y = pred_cases, color = division)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = division), alpha = 0.5) +
+  ylab("Predicted Cases") +
+  theme_classic() +
+  facet_wrap(~Pango.lineage, scale = "fixed") +
+  theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 50000)
+
+#Pred cases
+ggplot(full_data, aes(x=date, y = pred_cases, color = Pango.lineage)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = Pango.lineage), alpha = 0.5) +
+  ylab("Predicted Cases") +
+  theme_classic() +
+  facet_wrap(~division, scale = "fixed") +
+  theme(legend.title = element_blank(),
+        #legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) 
+
+
+
+ggplot(full_data, aes(x=date, y = smoothed_cases)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_line() +
+  #geom_area( alpha = 0.5) +
+  ylab("Observed Cases") +
+  theme_classic() +
+  facet_wrap(~Pango.lineage, scale = "fixed") +
+  theme(#legend.title = element_blank(),
+        #legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 50000)
+
+
+ggplot(full_data, aes(x=date, y = pred_freq, fill = division)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = division), alpha = 0.5) +
+  ylab("Observed Cases") +
+  theme_classic() +
+  facet_wrap(~Pango.lineage, scale = "fixed") +
+  theme(#legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 50000)
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+```{r}
+
+dodgerblue4
+obs_cas_wa = full_data %>%
+  filter(division %in% "Washington") %>% 
+  filter(Pango.lineage %in% "B.1.1.7") %>%
+ggplot(aes(x= date, y = new_case)) +
+  geom_bar(stat = "identity", fill = "dodgerblue4")+
+  facet_wrap(~division) + 
+  theme_classic() +
+    theme(#legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylab("Observed Cases")
+obs_cas_wa
+
+ggsave("../obs_cas_wa.png", plot = obs_cas_wa)
+
+
+
+pred_freq_was = full_data %>%
+  filter(division %in% "Washington") %>% 
+ggplot(aes(x= date, y = pred_freq, color = Pango.lineage)) +
+  geom_area(aes(fill= Pango.lineage)) +
+  facet_wrap(~division) + 
+  theme_classic() +
+    theme(#legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) +
+  ylab("Predicted frequencies")
+
+
+ggsave("../pred_freq_wa.png", plot = pred_freq_was)
+
+
+
+pred_cas_was = full_data %>%
+    filter(division %in% "Washington") %>% 
+ggplot(aes(x=date, y = pred_cases, color = Pango.lineage)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = Pango.lineage), alpha = 0.5) +
+  ylab("Predicted Cases") +
+  theme_classic() +
+  facet_wrap(~division, scale = "fixed") +
+  theme(legend.title = element_blank(),
+        #legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank()) 
+
+ggsave("../pred_cases_wa.png", plot = pred_cas_was, width = 1280,
+  height = 780, units= ("px"))
+
+```
+
+
+
+
+
+```{r}
 
 #Exporting dataset
+
 write.csv(full_data, "Rt_cdc&GISAID_Jul_21.csv")
 
 
 ```
 
 
+#Plotting pred freqs
+```{r}
 
+Observed_freqs = clean_df %>%
+  filter(division %in% c("Washington", "New York", "Texas", "Connecticut", "Illinois", "Michigan")) %>%
+  ggplot(aes(x= as.Date(date),y = freq,  fill = Pango.lineage)) + 
+  geom_area() + 
+  ylab("Observed Frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+Observed_freqs
+ggsave("../obs_freq_area.png", plot = Observed_freqs)
+
+
+freq_plot = clean_df %>%
+  filter(division %in% c("Washington", "New York", "Texas", "Connecticut", "Illinois", "Michigan")) %>%
+  ggplot(aes(x= as.Date(date),y = freq,  color = Pango.lineage)) + 
+  geom_line() + 
+  ylab("Observed frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+
+freq_plot
+ggsave("../obs_freq_06-30.png", plot = freq_plot)
+
+freq_plot2 = clean_df %>%
+  filter(division %in% c("Michigan", "New York", "Texas", "North Carolina", "Illinois", "Washington")) %>%
+  ggplot(aes(x= as.Date(date),y = freq,  fill = division)) + 
+  geom_area() + 
+  ylab("Predicted frequencies") +
+  theme_classic() +
+  facet_wrap(~Pango.lineage) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+  
+freq_plot2
+
+
+freq_plot3 = full_data %>%
+  ggplot(aes(x= as.Date(date),y = pred_freq,  color = Pango.lineage)) + 
+  ylab("Predicted frequencies") +
+  geom_line() +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+freq_plot3
+ggsave("../pred_freq_line.png", plot = freq_plot3)
+
+
+full_data %>%
+  ggplot(aes(x= as.Date(date),y = pred_cases,  fill = Pango.lineage)) + 
+  geom_area(alpha = 0.5) + 
+  ylab("Predicted cases") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+
+pred_freq = full_data %>%
+  ggplot(aes(x= as.Date(date),y = pred_freq,  fill = Pango.lineage)) + 
+  geom_area() + 
+  ylab("Predicted Frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+
+pred_freq
+
+ggsave("../pred_freq.png", plot = pred_freq)
+
+
+
+
+```
+
+#Aggregate Plots
+
+#Renaming lineages 
+```{r}
+
+#Renaming lineages to WHO classification greek 
+clean_df$Pango.lineage = gsub("B.1.1.7","Alpha",clean_df$Pango.lineage)
+clean_df$Pango.lineage = gsub("B.1.351","Beta",clean_df$Pango.lineage)
+clean_df$Pango.lineage = gsub("B.1.526","Iota",clean_df$Pango.lineage)
+clean_df$Pango.lineage = gsub("B.1.617.2","Delta",clean_df$Pango.lineage)
+clean_df$Pango.lineage = gsub("P.1","Gamma",clean_df$Pango.lineage)
+
+
+
+#vof = c("B.1.1.7", "P.1", "B.1.351", "B.1.526", "B.1.617.2") 
+#Renaming lineages to WHO classification greek 
+full_data$Pango.lineage = gsub("B.1.1.7","Alpha",full_data$Pango.lineage)
+full_data$Pango.lineage = gsub("B.1.351","Beta",full_data$Pango.lineage)
+full_data$Pango.lineage = gsub("B.1.526","Iota",full_data$Pango.lineage)
+full_data$Pango.lineage = gsub("B.1.617.2","Delta",full_data$Pango.lineage)
+full_data$Pango.lineage = gsub("P.1","Gamma",full_data$Pango.lineage)
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+library(ggpubr)
+
+
+counts_plot = clean_df %>%
+  filter(division %in% c("Washington", "New York", "Texas")) %>%
+ggplot(aes(x = date, fill = Pango.lineage)) +
+  geom_area(aes(y=n)) +
+  facet_wrap(~division) +
+  theme_classic() +
+      scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2")) +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank(),
+        strip.text = element_text(size=15)) +
+  ylab("sequenced samples")
+counts_plot
+ggsave("../counts_plot.png", plot = counts_plot, width = 3000,
+  height = 1200, units= ("px"))
+
+Observed_freqs = clean_df %>%
+  filter(division %in% c("Washington", "New York", "Texas")) %>%
+  ggplot(aes(x= as.Date(date),y = freq,  fill = Pango.lineage)) + 
+  geom_area(alpha = 1) + 
+  scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+  ylab("Observed Frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        legend.position = "none",
+        strip.background =element_blank(),
+        strip.text = element_text(size=15))
+        
+Observed_freqs
+ggsave("../Observed_freqs.png", plot = Observed_freqs, width = 3000,
+  height = 1200, units= ("px"))
+
+
+pred_freq = full_data %>%
+  filter(division %in% c("Washington", "New York", "Texas")) %>%
+  ggplot(aes(x= as.Date(date),y = pred_freq,  fill = Pango.lineage)) + 
+      scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+  geom_area(alpha = 1) + 
+  ylab("Predicted Frequencies") +
+  theme_classic() +
+  facet_wrap(~division) +
+  theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        #legend.key.width =  unit(3, 'cm'),
+        #legend.key.size = unit(1.5, 'cm'),
+        #legend.text=element_text(size=17),
+        strip.background =element_blank(),
+        strip.text = element_text(size=15))
+pred_freq
+
+
+
+ggsave("../pred_freq.png", plot = pred_freq, width = 3000,
+  height = 1200, units= ("px"))
+
+pred_freq
+
+
+#arranged plots
+arranged_freq = ggarrange(counts_plot, NULL, Observed_freqs , NULL, pred_freq , 
+          ncol = 1, nrow = 3,
+          labels = c("A", "","B","","C"),
+          common.legend = TRUE,
+          align = "hv")
+
+
+arranged_freq
+
+
+ggsave("../arranged_freq.png", plot = arranged_freq, width = 3000,
+  height = 3600, units= ("px"))
+
+
+
+```
+
+#Predicted Cases Aggregate
+```{r}
+
+obs_cas_wa = full_data %>%
+  filter(division %in% "Washington") %>% 
+ggplot(aes(x= date)) +
+geom_bar(aes(y =smoothed_cases), stat = "identity", position = "identity" ,fill = "grey50") +
+  theme_classic() +
+  labs(title = "Cases") +
+  theme(
+    legend.position = "none",
+  plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  panel.grid = element_blank(),
+        axis.title = element_blank(),
+        #axis.text.x = element_blank(),
+  #axis.text.y = element_blank(),
+  axis.ticks.y = element_blank(),
+  axis.ticks.x = element_blank())
+
+
+obs_cas_wa
+
+ggsave("../obs_cas_wa.png", plot = obs_cas_wa)
+
+
+
+pred_freq_was = full_data %>%
+  filter(division %in% "Washington") %>% 
+ggplot(aes(x= date, y = pred_freq, fill = Pango.lineage)) +
+  geom_area(aes(fill= Pango.lineage), alpha = 1) +
+  #theme_void() +
+  theme_classic() +
+    scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+  labs(title = "Lineage-Specific Frequency") +
+  theme(
+    legend.title = element_blank(),
+    legend.direction = "horizontal",
+    legend.position = c(0.5, 1.4),
+  plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  panel.grid = element_blank(),
+        axis.title = element_blank(),
+  axis.ticks.y = element_blank(),
+  axis.ticks.x = element_blank())
+#  aspect.ratio = 0.65) +
+#  coord_fixed(ratio = 0.5)
+
+
+
+pred_freq_was
+
+
+
+
+
+pred_cas_was = full_data %>%
+    filter(division %in% "Washington") %>% 
+ggplot(aes(x=date, y = pred_cases, fill = Pango.lineage)) + 
+  #geom_point(size = 0.5, alpha = 1) +
+  geom_area(aes(fill = Pango.lineage)) +
+  scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2"))  +
+  #ylab("Predicted Cases") +
+  theme_classic() +
+  #theme_void() +
+  labs(title = "Predicted Cases for each Lineage") +
+  #facet_wrap(~division, strip.position = "right") +
+  theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        strip.background =element_blank(),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5)) 
+
+pred_cas_was
+
+pred_case_arr = ggarrange(obs_cas_wa,pred_cas_was, pred_freq_was,  
+          ncol = 3, nrow = 1,  align = "h")#labels = "AUTO",
+          #widths = c(2, 2), heights = c(1, 2),)
+
+pred_case_arr
+
+
+
+ggsave("../arranged_pred_case.png", plot = pred_case_arr, width = 3000,
+  height = 1200, units= ("px"))
+
+
+```
 
