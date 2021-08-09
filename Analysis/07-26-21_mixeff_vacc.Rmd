@@ -1,0 +1,397 @@
+---
+title: "7-26-21_mixedeffect_vac"
+author: "Eslam Abousamra"
+date: "7/26/2021"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+library(ggeffects)
+```
+
+
+```{r}
+
+rt_data = read.csv("Rt_EpiEstim_est.csv") %>%
+  select(-X) %>% 
+  rename(Date = dates) %>%
+  mutate(Date = as.Date(Date)) %>%
+  na.omit()
+
+
+
+```
+
+```{r}
+rt_data
+rt_data %>%
+  filter(division == "Washington") %>%
+  ggplot(aes(x=Date, y = medianR)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), fill = "pink") +
+  geom_line() +
+  facet_wrap( ~pango_lineage) +
+   ylim(0, 2) +
+  theme_classic()
+
+rt_data %>%
+  ggplot(aes(x=Date, y = medianR, id = division)) + 
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_line(alpha = 0.8, aes(color = pango_lineage)) +
+  scale_y_continuous(limits = c(0.5, 2.3)) + 
+  facet_wrap( ~ pango_lineage) +
+    theme(legend.position = "none", 
+        axis.title.x=element_blank(),
+        panel.background = element_rect(fill = "white", colour = "grey50"))
+
+
+
+
+
+rt_data %>%
+  filter(Date == "2021-06-30") %>%
+  ggplot(aes(x=division, y = medianR, color = pango_lineage)) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  geom_errorbar(aes(ymin = lower, ymax = upper), color = "black", width = 0.2) +
+  geom_point(size = 3.5) + 
+  facet_wrap( ~ pango_lineage) +
+  ylim(0, 2) +
+  theme(#legend.position = "none", 
+        axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        panel.background = element_rect(fill = "white", colour = "grey50"))
+
+
+
+```
+
+```{r}
+
+
+vac_data= read.csv("COVID-19_Vaccinations_in_the_United_States_Jurisdiction-2.csv") %>% 
+  select(Date, Location, 
+         Administered_Dose1_Pop_Pct, Series_Complete_Pop_Pct, 
+         Administered_Dose1_Recip_18PlusPop_Pct, Series_Complete_18PlusPop_Pct, 
+         Administered_Dose1_Recip_65PlusPop_Pct, Series_Complete_65PlusPop_Pct) %>%
+  mutate(Location = abbr2state(Location)) %>%
+  rename(division = Location) %>%
+  mutate(Date = as.Date(Date, format="%m/%d/%Y")) %>%
+  na.omit()
+
+
+#Joining datasets by division and date
+full_data = rt_data %>% 
+  left_join(vac_data) %>%
+  mutate(Date = Date + 14)
+
+
+
+
+
+
+full_data = full_data %>%
+  group_by(division) %>% 
+  mutate(relative_rt = medianR/medianR[pango_lineage == 'other'])
+  
+
+
+
+```
+
+```{r}
+library(ggpmisc)
+
+#median R
+median_rt_vacc = full_data %>%
+  filter(Series_Complete_Pop_Pct > 0) %>%
+  #filter(pango_lineage != "other") %>%
+  filter(Date== "2021-07-14") %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = medianR)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  stat_poly_eq(formula = y ~ x, 
+               aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  facet_wrap(~ pango_lineage) +
+  xlab("Percentage of population fully vaccinated (lagged 2 weeks)") +
+  ylab("Median Reproductive Number") +
+  ggtitle(label = "Using estimates for 2021-07-14") +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 2) 
+
+median_rt_vacc
+
+ggsave("../vacc_median_R.png", plot = median_rt_vacc)
+#relative Rt
+statewide_rrt = full_data %>%
+  filter(Series_Complete_Pop_Pct > 0) %>%
+  filter(pango_lineage != "other") %>%
+  filter(Date== "2021-07-14") %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = relative_rt)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  stat_poly_eq(formula = y ~ x, 
+               aes(label = paste( ..rr.label.., sep = "~~~")), 
+               parse = TRUE,
+               label.y = "bottom") +
+  facet_wrap(~ pango_lineage) +
+  xlab("Percentage of Population fully vaccinated (lagged 2 weeks)") +
+  ylab("Relative Reproductive Number") +
+  ggtitle(label = "Using estimates for 07-14-2021") +
+  theme_classic() +
+  theme(legend.title = element_blank(),
+        strip.background =element_blank()) +
+  ylim(0, 2)
+
+statewide_rrt
+
+
+ggsave("../vacc_relative_R.png", plot = statewide_rrt)
+```
+
+
+
+```{r}
+
+library(lme4)
+library(optimx)
+
+rt_vacc = full_data %>% filter(Series_Complete_Pop_Pct > 0) %>% filter(division %in% c("Washington", "New York", "Texas"))
+
+
+rt_vacc$pango_lineage = gsub("B.1.1.7","Alpha",rt_vacc$pango_lineage)
+rt_vacc$pango_lineage = gsub("B.1.351","Beta",rt_vacc$pango_lineage)
+rt_vacc$pango_lineage = gsub("B.1.526","Iota",rt_vacc$pango_lineage)
+rt_vacc$pango_lineage = gsub("B.1.617.2","Delta",rt_vacc$pango_lineage)
+rt_vacc$pango_lineage = gsub("P.1","Gamma",rt_vacc$pango_lineage)
+
+  
+rt_vacc$pango_lineage = as.factor(rt_vacc$pango_lineage)
+rt_vacc$division = as.factor(rt_vacc$division) 
+
+
+# We fit a linear mixed model with fixed vaccination effect as well as random effects with lineage and state
+# For each lineage, we predict a random slope and intercept and for each state the same
+
+mixed.lmer =  lmer(medianR ~  Series_Complete_Pop_Pct + (1 + Series_Complete_Pop_Pct|pango_lineage) + (1+Series_Complete_Pop_Pct|division), data = rt_vacc, REML = FALSE, lmerControl(optimizer ='optimx', optCtrl=list(method='nlminb')))
+
+
+
+
+
+
+
+```
+
+#plotting mixed effects
+
+```{r}
+
+
+library(ggeffects)
+
+rt_mix1 = ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "pango_lineage"), type = "re")  %>%
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +
+  facet_wrap( ~group) +
+  xlab("Population proportion vaccination") +
+  ylab("Effective Reproduction number") +
+  theme_classic() +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        #axis.title.x=element_blank(),
+        strip.background =element_blank())
+rt_mix1 
+ggsave("../rt_mix_lineage.png", plot = rt_mix1)
+
+
+
+rt_mix2 = ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "division"), type = "re")  %>%
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +
+  facet_wrap( ~group) +
+  xlab("Population proportion vaccination") +
+  ylab("Effective Reproduction number") +  
+  theme_classic() +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        #axis.title.x=element_blank(),
+        strip.background =element_blank())
+rt_mix2 
+ggsave("../rt_mix2_lineage.png", plot = rt_mix2)
+
+
+
+```
+
+
+```{r}
+
+cbind(rt_vacc, pred = predict(mixed.lmer)) %>%
+  filter(division %in% c("Virginia", "Texas", "Missouri", "Michigan", "Washington", "Maryland")) %>%
+  ggplot(aes(x = Series_Complete_Pop_Pct, y = medianR, color = pango_lineage)) +
+  facet_wrap(~division) +
+  geom_point(alpha = 0.5) +
+  geom_line(aes(y = pred), size = 1) +
+    theme_classic() +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_blank(),
+        strip.background =element_blank())
+  
+```
+
+```{r}
+# Combine predictions
+cbind(rt_vacc, pred = predict(mixed.lmer))
+# What would R be if we continued vaccinating up to 70%, 80%, 90%?
+data_to_predict = crossing(division = c("Washington", "New York", "Texas"),
+         Series_Complete_Pop_Pct = seq(from = 0.0, to = 90, by = 10),
+         pango_lineage = c("Alpha", "Gamma", "Delta","Beta", "Iota", "other"))
+
+
+
+cross_pred = cbind(data_to_predict, predicted_Rt = predict(mixed.lmer, newdata = data_to_predict )) %>% ggplot(aes(x = Series_Complete_Pop_Pct, y = predicted_Rt, color = pango_lineage)) +
+  facet_wrap(~division) +
+  geom_line( size = 1) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  theme_classic() +
+  ylim(0,NA) +
+  xlab("Total population vaccination percentage") +
+      theme(legend.title = element_blank(),
+        #axis.title.x=element_blank(),
+        strip.background =element_blank())
+cross_pred
+ggsave("../rt_mix3_lineage_state.png", plot = cross_pred)
+
+            
+mix_arr
+```
+
+
+```{r}
+library(broom.mixed)
+# Really, we want to plot the fixed plus the random effects to get the overal slope in different regions
+random.effects <- ranef(mixed.lmer)
+re.df <- tibble::rownames_to_column(bind_rows(random.effects$division, random.effects$pango_lineage), "level")
+re.df <- re.df %>%
+  pivot_longer(!level, names_to = "term", values_to = "estimate")
+```
+
+```{r}
+re.df %>%
+  ggplot(aes(x = level, y = estimate)) +
+  geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
+  geom_point() +
+  coord_flip() +
+  facet_wrap(~term, scale = "free_x")
+```
+
+
+```{r}
+re.df <- tidy(mixed.lmer, effects = c("ran_vals"), conf.int = TRUE)
+re.df %>%
+  filter(group == "pango_lineage") %>%
+  ggplot(aes(x = level, y = estimate)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
+  geom_point() +
+  coord_flip() +
+  facet_grid(~term, scale = "free_x")
+
+
+
+
+
+```
+
+#arranged plot
+
+```{r}
+
+
+
+
+rt_mix1 = ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "pango_lineage"), type = "re")  %>%
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.3) +
+  facet_wrap(~group) +
+scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2")) +
+ scale_color_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2")) +
+  xlab("Population proportion vaccination") +
+  ylab("Effective Reproduction number") +
+  theme_classic() +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        strip.background =element_blank(),
+        strip.text = element_text(size=13))
+rt_mix1 
+ggsave("../rt_mix_lineage.png", plot = rt_mix1)
+
+library(viridis)
+
+rt_mix2 = ggpredict(mixed.lmer, terms = c("Series_Complete_Pop_Pct", "division"), type = "re")  %>% 
+  ggplot(aes(x = x)) +
+  geom_line(aes(y = predicted, color = "black")) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, color = NA), alpha = 0.3) +
+  facet_wrap( ~group) +
+  xlab("Population proportion vaccination") +
+  theme_classic() +
+  scale_fill_viridis(discrete = TRUE, option = "A") +
+  scale_color_viridis(discrete = TRUE, option = "A") +
+    theme(legend.title = element_blank(),
+        legend.position = "none",
+        axis.title.y=element_blank(),
+        strip.background =element_blank(),
+        strip.text = element_text(size=13))
+
+rt_mix2
+
+
+
+
+
+cross_pred = cbind(data_to_predict, predicted_Rt = predict(mixed.lmer, newdata = data_to_predict )) %>% ggplot(aes(x = Series_Complete_Pop_Pct, y = predicted_Rt, color = pango_lineage)) +
+  facet_wrap(~division) +
+  geom_line( size = 1) +
+  geom_hline(yintercept = 1,  linetype="dashed") +
+  theme_classic() +
+  ylim(0,NA) +
+scale_fill_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2")) +
+ scale_color_manual(values=c("#4F34D2","#5299e0","#b5d765","#ff5a30","#83cd93",
+"#dadfe2")) +
+  xlab("Total population vaccination percentage") +
+      theme(legend.title = element_blank(),
+             legend.position = "none",
+        strip.background =element_blank(),
+        strip.text = element_text(size=13))
+cross_pred
+
+
+
+library("gridExtra")
+mix_arr2= grid.arrange( arrangeGrob(rt_mix1, rt_mix2, ncol = 2), 
+             nrow = 2, cross_pred                            
+            )
+mix_arr2
+
+
+ggsave("../arranged_mix_effects.png", plot = mix_arr2, width = 3000,
+  height = 2400, units= ("px"))
+
+```
