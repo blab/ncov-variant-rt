@@ -122,7 +122,7 @@ with_epinow2_outs <- output %>%
   select(pango_lineage, division, aug_data, Rt_est) %>%
   unnest(aug_data)
 
-
+with_epinow2_outs
 
 
 
