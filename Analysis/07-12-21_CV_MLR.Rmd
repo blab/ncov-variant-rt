@@ -168,16 +168,20 @@ plot1 = f_data %>% filter(division %in% c("Michigan", "New York", "Washington", 
   ggplot(aes(x=(as.Date(date)), y = obs_freq, color = pango_lineage)) + 
   geom_smooth(aes(y = obs_freq, shape = id), se = FALSE, size= 0.5) +
   geom_line(aes(y = pred_freq), linetype= "dashed") +
-  facet_wrap(~division) +
+  facet_wrap(~division, strip.position = c("right")) +
   geom_vline(xintercept=as.numeric(as.Date("2021-03-05")), linetype=3, col = 'darkslategrey', size= 0.7) + annotate(geom="text",x=as.Date("2021-02-23"),
     y = 0.95, label=c("Train"), color = "darkslategrey", size = 4) +
   annotate(geom="text",x=as.Date("2021-03-15"),
     y = 0.95, label=c("Test"), color = "darkslategrey", size = 4) +
-  labs(title = "", x = "", y = "Observed frequencies") + theme_classic() +
+  labs(title = "", x = "", y = "Observed frequencies") + 
+  theme_minimal() +
   theme(legend.title = element_blank(),
         panel.grid.major = element_blank(),
-        #panel.border = element_rect(),
-        axis.title.x=element_blank())
+        panel.grid.minor  = element_blank(),
+        axis.line = element_line(color = 'black'),
+        plot.title = element_text(hjust = -0.45, vjust=2.12),
+        axis.title.x=element_blank(),
+        strip.text = element_text(size=10))
 
 plot1
 
