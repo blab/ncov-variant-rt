@@ -82,7 +82,7 @@ get_single_preds = function(model, data){
 
 ts_split = sliding_period(cv_data, index = date, period = "day",
                           lookback = Inf,
-                          assess_stop = 14,
+                          assess_stop = 7,
                           skip = 2)
 
 
@@ -134,9 +134,7 @@ metric_output = fold_test %>%
 
 
 
-head(metric_output)
 
-analysis(metric_output$splits[[1]])
 
 ```
 
@@ -164,7 +162,6 @@ get_f_data_set <- function(data, g){
 metric_new = metric_output %>% 
   mutate(min_assess = map_dbl(splits, ~get_f_data_set(assessment(.), min)) %>%
            as_date(),
-         
          max_assess = map_dbl(splits, ~get_f_data_set(assessment(.), max))%>%
            as_date() ,
          min_analysis = map_dbl(splits, ~get_f_data_set(analysis(.), min))%>%
@@ -185,31 +182,155 @@ extract_summary_metrics <- function(output){
 #extracting the summaries and the dates of variants
 summarydata = extract_summary_metrics(metric_new)
 
-
+summarydata
 
 ```
 
 #Plotting rolling cross-validation data and visualizing the rmse values
 
 ```{r}
-summarydata %>% 
+cv_plot = summarydata %>% 
   ggplot(aes(x = min_assess, y = .estimate)) +
-  geom_point(alpha = 1, shape = 19, color = "#0072B2", size = 1) +
-  geom_vline(data = var_app, aes(xintercept = first_day, color = Pango.lineage), linetype= "dashed") +
-    geom_vline(data = var_diss, aes(xintercept = last_day, color = Pango.lineage), linetype= "dashed") +
+  geom_point(alpha = 1, shape = 19, size = 1, color = "forestgreen") +
+    scale_color_viridis(discrete = TRUE, option = "D") +
+  geom_vline(data = var_app, aes(xintercept = first_day, color = Pango.lineage), linetype= "dashed", size = 1) +
   theme_classic() +
-  ylab("RSME estimates") +
-  xlab("Test (Assessment) Predictions date") +
-  ggtitle("New York State") +
-  theme(
-    aspect.ratio = 0.65)
+  ylab("Root Mean Square Error") +
+  xlab("Initial Test Prediction Date") +
+  ggtitle("New York") 
+cv_plot
+
+ggsave("../cv_data_ny.png", plot = cv_plot, width = 7, height = 5)
 
 
 ```
+#Plotting splits
+```{r}
+
+extract_dates_rsplit <- function(ts_split, date_col_name = "date"){
+  an_obj <- rsample::analysis(ts_split)
+  as_obj <- rsample::assessment(ts_split)
+  
+  tibble(analysis_min = min(an_obj[[date_col_name]]),
+         analysis_max = max(an_obj[[date_col_name]]),
+         assessment_min = min(as_obj[[date_col_name]]),
+         assessment_max = max(as_obj[[date_col_name]])
+  )
+}
+
+
+
+extract_dates_rset <- function(ts_split, date_col_name = "date"){
+  ts_split %>% 
+    mutate(dates = map(splits, extract_dates_rsplit, date_col_name = date_col_name)) %>% 
+    unnest(dates)
+}
+
+plot_dates_rset <- function(ts_split){
+
+  ts_split %>% 
+    select(-one_of("splits")) %>%
+    pivot_longer(cols = where(is.Date),
+                 names_to = "type",
+                 values_to = "date") %>% 
+    separate(type, c("data_type", "range_type"), "_") %>% 
+    ggplot(aes(y = fct_rev(id), x = date, colour = fct_rev(data_type)))+
+    geom_line(size = 2)+
+    scale_color_discrete(labels=c("Test","Train")) +
+    scale_color_viridis(discrete = TRUE, option = "D") +
+    theme_classic()+ 
+    theme(legend.title = element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        strip.background =element_blank())
+}
+
+
+
+#Extracting dates
+splits_vis= ts_split %>% 
+  extract_dates_rset()
+#Plotting dates
+splits_vis %>% 
+  plot_dates_rset() 
+
+#Subsetting for clearer visualization
+cv_plot1 = splits_vis[c(1:30),]%>% 
+  plot_dates_rset() 
+
+cv_plot1 
+cv_plot2 = splits_vis[c(60:90),] %>% 
+  plot_dates_rset() 
+
+ggsave("../slid_cv_1_.png", plot = cv_plot1, width = 7, height = 5)
+ggsave("../slid_cv_2.png", plot = cv_plot2, width = 7, height = 5)
+
+
+```
+#Aggregate plot
+
+```{r}
+
+
+
+head(summarydata)
+
+
+
+cv_plot = summarydata %>% 
+  ggplot(aes(x = min_assess, y = .estimate)) +
+  geom_point(alpha = 1, shape = 19, size = 1, color = "darkblue") +
+       scale_color_manual(values=c("#4F34D2","#5299e0","#83cd93","#b5d765","#dadfe2",
+"#ff5a30"))  +
+  geom_vline(data = var_app, aes(xintercept = first_day, color = Pango.lineage), linetype= "dashed", size = 1) +
+  theme_classic() +
+  theme(legend.position = "none",
+        strip.text = element_text(size=15)) +
+  ylab("Root Mean Square Error") +
+  xlab("Initial Test Prediction Date") +
+  ggtitle("New York") 
+cv_plot
 
 
 
 
+plot_dates_rset <- function(ts_split){
+  ts_split %>% 
+    select(-one_of("splits")) %>%
+    pivot_longer(cols = where(is.Date),
+                 names_to = "type",
+                 values_to = "date") %>% 
+    separate(type, c("data_type", "range_type"), "_") %>% 
+    ggplot(aes(y = fct_rev(id), x = date, colour = fct_rev(data_type)))+
+    geom_line(size = 2)+
+        scale_color_manual(values=c("#4F34D2","#5299e0","#83cd93","#b5d765","#dadfe2",
+"#ff5a30"))+
+    theme_classic()+ 
+    #ylab("Date") +
+    theme(legend.title = element_blank(),
+          legend.position = "top",
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        strip.background =element_blank(),
+        strip.text = element_text(size=15))
+}
+
+cv_plot1 = splits_vis[c(1:30),]%>% 
+  plot_dates_rset() 
+cv_plot1
+
+library(ggpubr)
+
+arranged_cv = ggarrange(cv_plot1, cv_plot, 
+          #ncol = 1, nrow = 3,
+          align = "hv",
+          vjust = -1.5)
+arranged_cv
+
+ggsave("../arranged_cv1.png", plot = arranged_cv, width = 3000,
+  height = 1200, units= ("px"))
+
+```
 
 
 
