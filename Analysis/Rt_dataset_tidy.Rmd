@@ -6,135 +6,111 @@ output: word_document
 ---
 
 ```{r}
-library(dplyr)
-library(ggplot2)
 library(tidyverse)
-library(lubridate)
-library(modelr)
-library(devtools)
 library(openintro)
-library(EpiEstim)
-library(data.table)
-
 ```
 
+## Prepare case counts
 
-
-# Reading and sorting datasets
-## Preparing Rt estimation dataset
-
-## Reading and cleaning datasets to preparing for merging 
-
+Load CDC case counts for the United States.
 
 ```{r}
-cdc_raw = read.csv("cdc-data.csv")
-covmeta_raw = read.table("metadata_usa_new.tsv", header=TRUE, sep ="\t") %>%
-  filter(date >= ("2021-01-01"))
+cdc_raw = read_csv(
+  "../cdc-data.csv",
+  col_select = c(submission_date, state, new_case)
+)
 ```
 
+Prepare CDC case counts for analysis.
+Convert state abbreviation to full names.
+Map other non-standard abbreviations to corresponding state/territory names, where possible (e.g., "NYC" maps to "New York").
+Group by full state/territory name and sum counts by these names to make sure we have a single value per date and state.
+
 ```{r}
-#Dataset 1
-
-init_df = covmeta_raw %>% select(date, division,Pango.lineage)
-
-#Standardizing date
-init_df = init_df %>% mutate(
-  date = as.Date(date)
-) 
-
-init_df
-
-
-#Dataset 2
-
-#Import and tidy data
-cdc_mod = cdc_raw %>% select(submission_date, state, new_case)
-
-#Rename variables
-cdc_mod = cdc_mod %>% 
-  rename(
-    date = submission_date
-  )
-#converting state abbreviation to full name
-cdc_mod = cdc_mod %>% mutate(newstate =
-  abbr2state(state))
-cdc_mod
-
-#Renaming variables
-cdc_mod = cdc_mod %>% select(date, newstate, new_case) %>%
-  rename(
-    division = newstate
+cdc_mod = cdc_raw %>% 
+  rename(date = submission_date) %>% 
+  mutate(newstate = abbr2state(state)) %>%
+  mutate(
+    newstate = case_when(
+      state == "AS" ~ "American Samoa",
+      state == "FSM" ~ "Federated States of Micronesia",
+      state == "GU" ~ "Guam",
+      state == "MP" ~ "Commonwealth of the Northern Mariana Islands",
+      state == "NYC" ~ "New York",
+      state == "PR" ~ "Puerto Rico",
+      state == "PW" ~ "Republic of Palau",
+      state == "RMI" ~ "Republic of the Marshall Islands",
+      state == "VI" ~ "U.S. Virgin Islands",
+      TRUE ~ as.character(newstate)
+    )
   ) %>%
-  filter(!is.na(division))
-  
-#Standardizing date
-cdc_mod = cdc_mod %>% mutate(
-  date = as.Date(date, format("%m/%d/%Y"))
-) 
+  group_by(date, newstate) %>% 
+  summarize(new_case = sum(new_case)) %>%
+  ungroup() %>%
+  rename(division = newstate) %>%
+  filter(!is.na(division)) %>%
+  mutate(date = as.Date(date, format("%m/%d/%Y"))) 
+
+cdc_mod
+```
+
+```{r}
 class(cdc_mod$date)
 view(cdc_mod)
-
 ```
 
+## Prepare genomic metadata
 
-# Merging two datasets 
-
+Load GISAID metadata for the United States.
+These data include Pango lineage annotations that allow us to calculate the frequencies of variants of concern for each date.
 
 ```{r}
-#Joining the two datasets
-init_df_new= init_df
+init_df = read_tsv(
+  "../metadata_gisaid_usa_since_2021-01-01.tsv.gz",
+  col_select = c(date, division, pango_lineage)
+)
+```
 
+Calculate counts and frequencies for specific variants of concern per date and state.
+
+```{r}
 var_of_concern = c("B.1.1.7", "B.1.351", "P.1", "B.1.427", "B.1.617.2")
 
 #tidying and prepping the dataset
 init_df_new = init_df %>%
-  mutate(Pango.lineage = case_when(Pango.lineage %in% var_of_concern ~ Pango.lineage, TRUE ~ "other")) %>%  
-   group_by(date, division) %>%
-  count(date, Pango.lineage, division)%>%
+  mutate(pango_lineage = case_when(pango_lineage %in% var_of_concern ~ pango_lineage, TRUE ~ "other")) %>%  
+  group_by(date, division) %>%
+  count(date, pango_lineage, division)%>%
   mutate(totalcount = sum(n, na.rm = FALSE))%>% 
   ungroup() %>% 
   mutate(freq = n/totalcount) %>%
-  complete(date, Pango.lineage, division,
-             fill = list(N = 0, freq = 0)) 
-%>%
- mutate(n = replace_na(n, 0),
-      freq = replace_na(freq, 0),
-        totalcount = replace_na(totalcount, 0))
+  complete(date, pango_lineage, division,
+             fill = list(N = 0, freq = 0)) %>%
+  mutate(
+    n = replace_na(n, 0),
+    freq = replace_na(freq, 0),
+    totalcount = replace_na(totalcount, 0)
+  )
 
 init_df_new
 ```
 
+## Merge case counts and genomic data
 
+Merge case counts and genomic data on date and state.
+Each row represents a lineage for a specific variant of concern at a given date in a specific state.
+These rows redundantly encode case counts for the corresponding date and state.
 
-
-# Joining the dataset
 ```{r}
-
-
 initial_mod = init_df_new %>% left_join(cdc_mod) %>% filter(!is.na(new_case))
-  
-
 view(initial_mod)
-
-write.csv(initial_mod, "Rt_cdc&GISAID.csv")
-
 ```
 
+Save merged data frame for downstream analyses.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```{r}
+write_csv(
+  initial_mod,
+  "counts_and_frequencies_per_date_state_and_lineage.csv"
+)
+```
